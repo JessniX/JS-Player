@@ -34,7 +34,7 @@ const DEFAULTS = {
   positions: {}, sidebar: true, tab: 'playlist',
   img: { interval: 5, transition: 'fade', bg: 'theme', upscale: false, strip: true, info: false },
   mode: 'player',
-  feeds: { autoNext: false, askedAuto: false, last: null },
+  feeds: { autoNext: false, askedAuto: false, last: null, quality: 'auto' },
 };
 
 let S = structuredClone(DEFAULTS);
@@ -1089,6 +1089,7 @@ function buildSettings() {
 // ---------------------------------------------------------------- boot
 function merge(def, val) {
   if (val == null) return def;
+  if (def == null) return val; // no default type to check against (e.g. feeds.last)
   if (Array.isArray(def)) return Array.isArray(val) ? val : def;
   if (typeof def === 'object' && def) {
     const o = { ...def };

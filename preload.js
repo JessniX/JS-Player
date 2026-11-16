@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('prism', {
   fileStat: (p) => ipcRenderer.invoke('file-stat', p),
   feedsStatus: () => ipcRenderer.invoke('feeds-status'),
   feedsSignOut: (id) => ipcRenderer.invoke('feeds-sign-out', id),
+  onFeedEscape: (cb) => ipcRenderer.on('feed-escape', () => cb()),
   getSettings: () => ipcRenderer.invoke('get-settings'),
   saveSettings: (s) => ipcRenderer.send('save-settings', s),
   getLaunchFiles: () => ipcRenderer.invoke('get-launch-files'),

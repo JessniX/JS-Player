@@ -72,6 +72,29 @@ function prismAutoNext(enabled) {
   return 'installed';
 }
 
+// YouTube only: keep the player at the chosen quality. 'auto' leaves it to YouTube, like Chrome.
+function prismQuality(pref) {
+  const prev = window.__prismQ;
+  window.__prismQ = pref;
+  const apply = () => {
+    const q = window.__prismQ;
+    for (const p of document.querySelectorAll('.html5-video-player')) {
+      try {
+        if (q === 'auto') { if (prev && prev !== 'auto') p.setPlaybackQualityRange?.('auto', 'auto'); continue; }
+        const levels = (p.getAvailableQualityLevels?.() || []).filter((l) => l !== 'auto');
+        if (!levels.length) continue;
+        const want = q === 'hd'
+          ? levels.find((l) => l === 'hd1080') || levels.find((l) => l === 'hd720') || levels[0]
+          : levels.find((l) => l === 'medium') || levels[levels.length - 1];
+        if (p.getPlaybackQuality?.() !== want) p.setPlaybackQualityRange?.(want, want);
+      } catch { /* player not ready */ }
+    }
+  };
+  apply();
+  if (!window.__prismQTimer) window.__prismQTimer = setInterval(apply, 1500);
+  return pref;
+}
+
 const PAUSE_JS = `document.querySelectorAll('video,audio').forEach(v => { if (!v.paused) { v.dataset.prismPaused = '1'; v.pause(); } }); 1`;
 const RESUME_JS = `(() => { const v = [...document.querySelectorAll('video,audio')].find(x => x.dataset.prismPaused); document.querySelectorAll('[data-prism-paused]').forEach(x => delete x.dataset.prismPaused); if (v) v.play().catch(() => {}); return 1; })()`;
 
@@ -223,6 +246,7 @@ function pressNext(wv) {
 function injectAutoNext(wv, f) {
   const on = !!(S.feeds.autoNext && f.auto);
   wv.executeJavaScript(`(${prismAutoNext.toString()})(${on})`).catch(() => {});
+  if (f.id === 'youtube') wv.executeJavaScript(`(${prismQuality.toString()})(${JSON.stringify(S.feeds.quality)})`).catch(() => {});
 }
 
 function updateFeedBar() {
@@ -294,9 +318,35 @@ async function signOutFeed(id) {
   osd(`Signed out of ${f.name}`);
 }
 
+// ------------------------------------------------------------ speed & quality options
+function setFeedQuality(q) {
+  S.feeds.quality = q;
+  $('#feed-quality').value = q;
+  const wv = FD.views.get('youtube');
+  if (wv) { try { injectAutoNext(wv, feedById('youtube')); } catch {} }
+  osd({ auto: 'YouTube quality: Auto', hd: 'YouTube quality: prefer HD', saver: 'YouTube quality: data saver' }[q]);
+  save();
+}
+$('#feed-quality').addEventListener('change', (e) => setFeedQuality(e.target.value));
+
+// full-screen feed: hide every JS Player bar so the video gets the whole window
+let feedFull = false;
+function toggleFeedFull(force) {
+  feedFull = force ?? !feedFull;
+  document.body.classList.toggle('feed-full', feedFull);
+  api.windowCmd('fullscreen', feedFull);
+  if (feedFull) osd('Press Esc or the button at the top to leave full screen', 2200);
+  curView()?.focus();
+}
+$('#fb-full').onclick = () => toggleFeedFull(true);
+$('#feed-exit-full').onclick = () => toggleFeedFull(false);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && feedFull) toggleFeedFull(false); });
+api.onFeedEscape(() => { if (feedFull) toggleFeedFull(false); });
+
 function initFeeds() {
   renderFeedRail();
   renderFeedCards();
   syncAutoSwitches();
+  $('#feed-quality').value = S.feeds.quality;
   if (S.mode === 'feeds') setMode('feeds');
 }

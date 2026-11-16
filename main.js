@@ -271,19 +271,28 @@ async function transcode(file, sender) {
 }
 
 // ---------- settings ----------
+// Writes are batched for 250 ms. Reads see the not-yet-written data, and anything
+// pending is written before the app quits, so last-second changes aren't lost.
+let pendingSettings = null;
+let saveTimer = null;
 function loadSettings() {
+  if (pendingSettings) return JSON.parse(JSON.stringify(pendingSettings));
   try { return JSON.parse(fs.readFileSync(settingsFile(), 'utf8')); } catch { return {}; }
 }
-let saveTimer = null;
-function saveSettings(data) {
+function writeSettingsNow() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    try {
-      const tmp = settingsFile() + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
-      fs.renameSync(tmp, settingsFile());
-    } catch (e) { console.error('settings save failed', e); }
-  }, 250);
+  if (!pendingSettings) return;
+  try {
+    const tmp = settingsFile() + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(pendingSettings, null, 2));
+    fs.renameSync(tmp, settingsFile());
+  } catch (e) { console.error('settings save failed', e); }
+  pendingSettings = null;
+}
+function saveSettings(data) {
+  pendingSettings = data;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(writeSettingsNow, 250);
 }
 
 // ---------- window ----------
@@ -342,16 +351,22 @@ function createWindow() {
 
 // --smoke: load, optionally play the file passed on the command line, capture a screenshot, quit.
 function smokeTest() {
-  win.webContents.on('console-message', (_e, level, message) => {
-    if (level >= 2) console.log('[renderer]', message);
+  win.webContents.on('console-message', (e, oldLevel, oldMessage) => {
+    // Electron 35+ passes one event object; older versions passed (event, level, message)
+    const level = e.level ?? oldLevel;
+    const message = e.message ?? oldMessage;
+    if (level === 'warning' || level === 'error' || (typeof level === 'number' && level >= 2)) console.log('[renderer]', message);
   });
   win.webContents.once('did-finish-load', async () => {
     if (process.env.PRISM_SMOKE_SHOW) win.showInactive(); // embedded pages only run at full speed in a visible window
     if (process.env.PRISM_SMOKE_SILENT) win.webContents.setAudioMuted(true);
+    console.log('[smoke] versions', JSON.stringify({ electron: process.versions.electron, chrome: process.versions.chrome }));
+    console.log('[smoke] gpu', JSON.stringify(app.getGPUFeatureStatus()));
     const size = /^(\d+)x(\d+)$/.exec(process.env.PRISM_SMOKE_SIZE || '');
     if (size) win.setContentSize(+size[1], +size[2]);
     const shotDir = process.env.PRISM_SMOKE_DIR || app.getPath('temp');
-    const steps = (process.env.PRISM_SMOKE_STEPS || '').split('|||').filter(Boolean);
+    const stepsText = process.env.PRISM_SMOKE_STEPS_FILE ? fs.readFileSync(process.env.PRISM_SMOKE_STEPS_FILE, 'utf8') : process.env.PRISM_SMOKE_STEPS || '';
+    const steps = stepsText.split('|||').map((s) => s.trim()).filter(Boolean);
     await new Promise((r) => setTimeout(r, 4000));
     let i = 0;
     const snap = async (name) => {
@@ -517,4 +532,5 @@ if (!SMOKE && !app.requestSingleInstanceLock()) {
   });
 
   app.on('window-all-closed', () => app.quit());
+  app.on('will-quit', writeSettingsNow);
 }

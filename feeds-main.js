@@ -25,15 +25,32 @@ const SIGN_OUT_DOMAINS = {
   reddit: ['reddit.com'],
 };
 
-// Some sites refuse to sign you in from an app that says "Electron" in its user agent.
+// Present exactly like desktop Chrome on the same engine version. Sites treat unknown
+// browsers (an "Electron" or app-name token, or no "Google Chrome" brand) as second-class:
+// some refuse sign-in, some serve lower video quality.
+const CHROME_MAJOR = process.versions.chrome.split('.')[0];
 function browserUserAgent() {
-  const name = app.getName().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return app.userAgentFallback.replace(new RegExp(`\\s(Electron|${name}|js-player)/\\S+`, 'g'), '');
+  const platform = (/\(([^)]+)\)/.exec(app.userAgentFallback) || [])[1] || 'Windows NT 10.0; Win64; x64';
+  return `Mozilla/5.0 (${platform}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROME_MAJOR}.0.0.0 Safari/537.36`;
 }
+const CH_BRANDS = `"Google Chrome";v="${CHROME_MAJOR}", "Chromium";v="${CHROME_MAJOR}", "Not_A Brand";v="24"`;
+const CH_FULL = `"Google Chrome";v="${process.versions.chrome}", "Chromium";v="${process.versions.chrome}", "Not_A Brand";v="24.0.0.0"`;
 
 function setupFeeds(getWin) {
   const ses = session.fromPartition(PARTITION);
   ses.setUserAgent(browserUserAgent());
+  // Only where it matters (YouTube quality, Google sign-in): every hooked request takes a
+  // detour through the main process, which measurably slowed request-heavy sites like TikTok.
+  const CH_FILTER = { urls: ['*://*.youtube.com/*', '*://*.google.com/*', '*://*.googlevideo.com/*'] };
+  ses.webRequest.onBeforeSendHeaders(CH_FILTER, (details, cb) => {
+    const h = details.requestHeaders;
+    for (const k of Object.keys(h)) {
+      const lk = k.toLowerCase();
+      if (lk === 'sec-ch-ua') h[k] = CH_BRANDS;
+      else if (lk === 'sec-ch-ua-full-version-list') h[k] = CH_FULL;
+    }
+    cb({ requestHeaders: h });
+  });
   ses.setPermissionRequestHandler((_wc, permission, cb) => cb(['fullscreen', 'clipboard-sanitized-write'].includes(permission)));
 
   app.on('web-contents-created', (_e, wc) => {
@@ -49,6 +66,11 @@ function setupFeeds(getWin) {
     }
     // sign-in popups ("Continue with Google", etc.) open as small windows in the same session
     if (wc.getType() === 'webview') {
+      // Esc inside a feed page never reaches the JS Player window, so pass it on (used to leave full screen)
+      wc.on('before-input-event', (_e, input) => {
+        const w = getWin();
+        if (input.type === 'keyDown' && input.key === 'Escape' && w && !w.isDestroyed()) w.webContents.send('feed-escape');
+      });
       wc.setWindowOpenHandler(({ url }) => {
         if (!/^https?:\/\//.test(url)) return { action: 'deny' };
         return {

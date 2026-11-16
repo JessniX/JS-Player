@@ -238,6 +238,17 @@
             </div>
             <label class="switch big"><input type="checkbox" id="feed-auto-home"><span></span></label>
           </div>
+          <div class="feed-card wide speed-card">
+            <div class="auto-text">
+              <h3>Speed &amp; quality</h3>
+              <p>YouTube quality: <b>Auto</b> lets YouTube pick, like Chrome does. <b>Prefer HD</b> looks sharper but uses more data. Feeds you've opened stay loaded, so switching between them is instant.</p>
+            </div>
+            <select id="feed-quality" class="input quality-select">
+              <option value="auto">Auto (like Chrome)</option>
+              <option value="hd">Prefer HD</option>
+              <option value="saver">Data saver</option>
+            </select>
+          </div>
           <p class="feed-privacy"><i data-icon="lock"></i> You sign in on each site's own page. JS Player never sees your password, and everything stays on this PC.</p>
         </div>
 
@@ -254,7 +265,9 @@
               <span class="switch"><input type="checkbox" id="fb-auto"><span></span></span>
             </label>
             <button class="btn small" id="fb-sign">Sign in</button>
+            <button class="icon-btn" id="fb-full" title="Full screen (Esc to leave)"><i data-icon="full"></i></button>
           </div>
+          <button class="btn small feed-exit-full" id="feed-exit-full"><i data-icon="exitFull"></i> Leave full screen</button>
           <div class="feed-ask hidden" id="feed-ask">
             <span>👋 Want JS Player to skip to the next video automatically when one finishes?</span>
             <button class="btn small primary" id="ask-yes">Yes, turn it on</button>

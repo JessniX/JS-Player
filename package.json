@@ -11,8 +11,8 @@
   },
   "license": "MIT",
   "devDependencies": {
-    "electron": "^33.2.0",
-    "electron-builder": "^25.1.8"
+    "electron": "^45.3.3",
+    "electron-builder": "^26.18.0"
   },
   "optionalDependencies": {
     "ffmpeg-static": "^5.2.0"

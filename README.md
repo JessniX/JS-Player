@@ -67,6 +67,7 @@ You can pick colors (your theme's, rainbow, fire, ice or your own 3-color gradie
 - Scroll **YouTube Shorts, TikTok, Instagram Reels, Facebook Reels, X and Reddit** without leaving the app.
 - Sign in once on each site's own page and JS Player remembers you.
 - **Auto next** (your choice, off by default) jumps to the next video when one finishes.
+- Runs on the same engine as Chrome (Chromium 156), so feeds load as fast as in Chrome. **YouTube quality** can be Auto (like Chrome), Prefer HD (true 1080p) or Data saver, and a **full-screen** button gives the video the whole window.
 - See [Feeds and privacy](#feeds-and-privacy).
 
 ---
