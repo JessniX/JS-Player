@@ -1,4 +1,4 @@
-// Prism Player — main process
+// JS Player — main process
 // Serves the UI and local media over a private "prism://" scheme (so Web Audio
 // visualizers work without CORS problems), probes/converts files with ffmpeg,
 // and stores settings in the user's app-data folder.
@@ -294,7 +294,7 @@ function createWindow() {
     width: b.width || 1280, height: b.height || 760, x: b.x, y: b.y,
     minWidth: 640, minHeight: 400,
     backgroundColor: '#0d0f16',
-    title: 'Prism Player',
+    title: 'JS Player',
     titleBarStyle: 'hidden',
     titleBarOverlay: process.platform === 'darwin' ? undefined : { color: '#00000000', symbolColor: '#e6e8f0', height: 38 },
     trafficLightPosition: { x: 12, y: 12 },
@@ -452,20 +452,20 @@ ipcMain.on('save-settings', (_e, data) => {
 });
 ipcMain.handle('get-launch-files', () => { const f = launchFiles; launchFiles = []; return f; });
 ipcMain.handle('save-screenshot', async (_e, dataUrl, name) => {
-  const dir = path.join(app.getPath('pictures'), 'Prism Player');
+  const dir = path.join(app.getPath('pictures'), 'JS Player');
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, `${name.replace(/[\\/:*?"<>|]/g, '_')}-${Date.now()}.png`);
   fs.writeFileSync(file, Buffer.from(dataUrl.split(',')[1], 'base64'));
   return file;
 });
 ipcMain.handle('export-theme', async (_e, theme) => {
-  const r = await dialog.showSaveDialog(win, { defaultPath: `${theme.name || 'theme'}.prismtheme.json`, filters: [{ name: 'Prism theme', extensions: ['json'] }] });
+  const r = await dialog.showSaveDialog(win, { defaultPath: `${theme.name || 'theme'}.prismtheme.json`, filters: [{ name: 'JS Player theme', extensions: ['json'] }] });
   if (r.canceled) return false;
   fs.writeFileSync(r.filePath, JSON.stringify(theme, null, 2));
   return true;
 });
 ipcMain.handle('import-theme', async () => {
-  const r = await dialog.showOpenDialog(win, { properties: ['openFile'], filters: [{ name: 'Prism theme', extensions: ['json'] }] });
+  const r = await dialog.showOpenDialog(win, { properties: ['openFile'], filters: [{ name: 'JS Player theme', extensions: ['json'] }] });
   if (r.canceled) return null;
   try { return JSON.parse(fs.readFileSync(r.filePaths[0], 'utf8')); } catch { return null; }
 });

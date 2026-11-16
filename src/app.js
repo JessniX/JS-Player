@@ -1,4 +1,4 @@
-// Prism Player — renderer
+// JS Player — renderer
 const api = window.prism;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -232,7 +232,7 @@ function setMeta(item, cover) {
   $('#meta-title').textContent = item.title || item.name || '';
   $('#meta-artist').textContent = item.artist || '';
   $('#now-title').textContent = (item.artist ? item.artist.split(' — ')[0] + ' — ' : '') + (item.title || item.name || '');
-  api.windowCmd('title', `${item.title || item.name} — Prism Player`);
+  api.windowCmd('title', `${item.title || item.name} — JS Player`);
   const img = $('#cover');
   img.src = cover ? api.mediaUrl(cover) : placeholderCover();
   if ('mediaSession' in navigator) {
@@ -753,7 +753,7 @@ async function screenshot() {
     g.drawImage(vizCanvas, 0, 0);
   }
   const file = await api.saveScreenshot(c.toDataURL('image/png'), `${current.item.name}-${fmt(video.currentTime).replace(/:/g, '.')}`);
-  osd('Screenshot saved to Pictures\\Prism Player', 2200);
+  osd('Screenshot saved to Pictures\\JS Player', 2200);
   console.log('screenshot', file);
 }
 
@@ -1022,7 +1022,7 @@ function buildThemeEditor() {
   $('#theme-export').onclick = () => api.exportTheme({ ...currentTheme(), bgImage: '' });
   $('#theme-import').onclick = async () => {
     const t = await api.importTheme();
-    if (!t || !t.bg || !t.accent) return osd('That file is not a Prism theme');
+    if (!t || !t.bg || !t.accent) return osd('That file is not a JS Player theme');
     t.name = t.name || 'Imported';
     delete t.preset;
     S.customThemes = S.customThemes.filter((x) => x.name !== t.name).concat(t);

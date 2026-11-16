@@ -1,7 +1,7 @@
 {
-  "name": "prism-player",
-  "productName": "Prism Player",
-  "version": "0.1.0",
+  "name": "js-player",
+  "productName": "JS Player",
+  "version": "1.0.0",
   "description": "A customizable media player with live audio visualizers, themes, an equalizer and ffmpeg fallback for any file type.",
   "main": "main.js",
   "scripts": {
@@ -18,15 +18,83 @@
     "ffmpeg-static": "^5.2.0"
   },
   "build": {
-    "appId": "com.prism.player",
-    "productName": "Prism Player",
-    "files": ["main.js", "feeds-main.js", "preload.js", "src/**/*"],
-    "asarUnpack": ["node_modules/ffmpeg-static/**"],
-    "win": { "target": "nsis" },
+    "appId": "com.jessnix.jsplayer",
+    "productName": "JS Player",
+    "files": [
+      "main.js",
+      "feeds-main.js",
+      "preload.js",
+      "src/**/*"
+    ],
+    "asarUnpack": [
+      "node_modules/ffmpeg-static/**"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "artifactName": "JS-Player-Setup-${version}.${ext}"
+    },
+    "publish": null,
     "fileAssociations": [
-      { "ext": ["mp4", "mkv", "avi", "mov", "webm", "wmv", "flv", "m4v", "ts", "mpg", "mpeg", "3gp"], "name": "Video", "role": "Viewer" },
-      { "ext": ["mp3", "flac", "wav", "ogg", "opus", "m4a", "aac", "wma", "aiff", "alac", "ape"], "name": "Audio", "role": "Viewer" },
-      { "ext": ["jpg", "jpeg", "png", "gif", "webp", "avif", "bmp", "tif", "tiff", "heic", "svg", "ico"], "name": "Image", "role": "Viewer" }
+      {
+        "ext": [
+          "mp4",
+          "mkv",
+          "avi",
+          "mov",
+          "webm",
+          "wmv",
+          "flv",
+          "m4v",
+          "ts",
+          "mpg",
+          "mpeg",
+          "3gp"
+        ],
+        "name": "Video",
+        "role": "Viewer"
+      },
+      {
+        "ext": [
+          "mp3",
+          "flac",
+          "wav",
+          "ogg",
+          "opus",
+          "m4a",
+          "aac",
+          "wma",
+          "aiff",
+          "alac",
+          "ape"
+        ],
+        "name": "Audio",
+        "role": "Viewer"
+      },
+      {
+        "ext": [
+          "jpg",
+          "jpeg",
+          "png",
+          "gif",
+          "webp",
+          "avif",
+          "bmp",
+          "tif",
+          "tiff",
+          "heic",
+          "svg",
+          "ico"
+        ],
+        "name": "Image",
+        "role": "Viewer"
+      }
     ]
   }
 }

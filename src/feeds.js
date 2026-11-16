@@ -1,4 +1,4 @@
-// Feeds: scroll your social feeds inside Prism.
+// Feeds: scroll your social feeds inside JS Player.
 // Each site runs in its own sandboxed <webview>, all sharing one saved session (see feeds-main.js).
 
 const FEEDS = [
@@ -16,7 +16,7 @@ const FD = { mode: 'player', current: null, views: new Map(), status: {}, onHome
 // ------------------------------------------------------------ script injected into feed pages
 // Watches the video you're looking at. When it reaches the end (or loops back to the start),
 // it moves on: the site's own "next" button if there is one, else an ArrowDown key press
-// sent by Prism, else scrolling the feed by one screen.
+// sent by JS Player, else scrolling the feed by one screen.
 function prismAutoNext(enabled) {
   if (window.__prismAuto) { window.__prismAuto.enabled = enabled; return 'updated'; }
   const st = (window.__prismAuto = { enabled, lastAdvance: 0 });
@@ -285,8 +285,8 @@ $('#fb-sign').onclick = () => {
 
 async function signOutFeed(id) {
   const f = feedById(id);
-  const extra = id === 'youtube' ? ' This also signs you out of Google inside Prism.' : '';
-  if (!confirm(`Sign out of ${f.name} in Prism?${extra}`)) return;
+  const extra = id === 'youtube' ? ' This also signs you out of Google inside JS Player.' : '';
+  if (!confirm(`Sign out of ${f.name} in JS Player?${extra}`)) return;
   await api.feedsSignOut(id);
   await refreshFeedStatus();
   const wv = FD.views.get(id);

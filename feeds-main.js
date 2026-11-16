@@ -1,5 +1,5 @@
 // Feeds: social sites shown in sandboxed <webview>s that share one saved session.
-// You sign in on each site's own page; Prism never sees or stores passwords.
+// You sign in on each site's own page; JS Player never sees or stores passwords.
 // It only checks which login cookies exist, to show "Signed in" on the Feeds screen.
 
 const { app, session, ipcMain } = require('electron');
@@ -27,7 +27,8 @@ const SIGN_OUT_DOMAINS = {
 
 // Some sites refuse to sign you in from an app that says "Electron" in its user agent.
 function browserUserAgent() {
-  return app.userAgentFallback.replace(/\s(Electron|prism-player)\/\S+/g, '');
+  const name = app.getName().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return app.userAgentFallback.replace(new RegExp(`\\s(Electron|${name}|js-player)/\\S+`, 'g'), '');
 }
 
 function setupFeeds(getWin) {
@@ -36,7 +37,7 @@ function setupFeeds(getWin) {
   ses.setPermissionRequestHandler((_wc, permission, cb) => cb(['fullscreen', 'clipboard-sanitized-write'].includes(permission)));
 
   app.on('web-contents-created', (_e, wc) => {
-    // the Prism window may only attach locked-down https webviews in the feeds session
+    // the JS Player window may only attach locked-down https webviews in the feeds session
     if (wc.getType() === 'window') {
       wc.on('will-attach-webview', (e, prefs, params) => {
         delete prefs.preload;

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self' prism: blob: data:; style-src 'self' 'unsafe-inline' prism:; img-src 'self' prism: blob: data:; media-src prism: blob:; font-src 'self' prism: data:; frame-src https:">
-  <title>Prism Player</title>
+  <title>JS Player</title>
   <link rel="stylesheet" href="styles.css">
   <style id="custom-css"></style>
 </head>
@@ -12,7 +12,7 @@
   <div id="app">
     <!-- Title bar -->
     <header id="titlebar">
-      <div class="brand"><span class="logo"></span>Prism</div>
+      <div class="brand"><span class="logo"></span>JS Player</div>
       <div class="mode-switch" role="tablist">
         <button data-mode="player" class="active" title="Your videos, music and photos"><i data-icon="play"></i><span>Player</span></button>
         <button data-mode="feeds" title="Scroll your social feeds"><i data-icon="feeds"></i><span>Feeds</span></button>
@@ -60,7 +60,7 @@
         <div id="empty" class="empty">
           <div class="empty-logo"></div>
           <h1>Drop anything here</h1>
-          <p>Video, music, photos, whole folders. If a format won't open natively, Prism converts it with ffmpeg.</p>
+          <p>Video, music, photos, whole folders. If a format won't open natively, JS Player converts it with ffmpeg.</p>
           <div class="empty-actions">
             <button class="btn primary" data-cmd="open"><i data-icon="file"></i> Open files</button>
             <button class="btn" data-cmd="folder"><i data-icon="folder"></i> Open folder</button>
@@ -228,7 +228,7 @@
         <div class="feed-home" id="feed-home">
           <div class="feed-hero">
             <h1>Your feeds</h1>
-            <p>Pick a feed to start scrolling. Sign in once, and Prism remembers you.</p>
+            <p>Pick a feed to start scrolling. Sign in once, and JS Player remembers you.</p>
           </div>
           <div class="feed-cards" id="feed-cards"></div>
           <div class="feed-card wide auto-card">
@@ -238,7 +238,7 @@
             </div>
             <label class="switch big"><input type="checkbox" id="feed-auto-home"><span></span></label>
           </div>
-          <p class="feed-privacy"><i data-icon="lock"></i> You sign in on each site's own page. Prism never sees your password, and everything stays on this PC.</p>
+          <p class="feed-privacy"><i data-icon="lock"></i> You sign in on each site's own page. JS Player never sees your password, and everything stays on this PC.</p>
         </div>
 
         <div class="feed-view hidden" id="feed-view">
@@ -256,7 +256,7 @@
             <button class="btn small" id="fb-sign">Sign in</button>
           </div>
           <div class="feed-ask hidden" id="feed-ask">
-            <span>👋 Want Prism to skip to the next video automatically when one finishes?</span>
+            <span>👋 Want JS Player to skip to the next video automatically when one finishes?</span>
             <button class="btn small primary" id="ask-yes">Yes, turn it on</button>
             <button class="btn small" id="ask-no">No thanks</button>
           </div>
