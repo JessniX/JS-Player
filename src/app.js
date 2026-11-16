@@ -25,7 +25,7 @@ const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 3];
 
 const DEFAULTS = {
   volume: 1, muted: false, speed: 1,
-  themeName: 'Midnight', theme: null, customThemes: [],
+  themeName: 'Violet', theme: null, customThemes: [],
   viz: { mode: 'bars', bars: 96, sensitivity: 1, smoothing: 0.72, glow: 14, peaks: true, pulse: true, art: true, onVideo: false, colorMode: 'theme', custom: ['#ff3cac', '#784ba0', '#2b86c5'] },
   eq: { on: false, preset: 'Flat', gains: [...EQ_PRESETS.Flat], preamp: 0, pan: 0, bass: 0 },
   playlist: [], index: -1, shuffle: false, repeat: 'off',

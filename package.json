@@ -1,16 +1,19 @@
 {
   "name": "js-player",
   "productName": "JS Player",
-  "version": "1.0.0",
+  "version": "1.0.4",
   "description": "A customizable media player with live audio visualizers, themes, an equalizer and ffmpeg fallback for any file type.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "smoke": "electron . --smoke",
-    "dist": "electron-builder --win"
+    "dist": "electron-builder --win",
+    "tokens": "node scripts/astryx-tokens.mjs"
   },
   "license": "MIT",
   "devDependencies": {
+    "@astryxdesign/cli": "^0.7.16",
+    "@astryxdesign/core": "^0.7.16",
     "electron": "^45.3.3",
     "electron-builder": "^26.18.0"
   },
@@ -96,5 +99,8 @@
         "role": "Viewer"
       }
     ]
+  },
+  "allowScripts": {
+    "electron@45.3.3": true
   }
 }
