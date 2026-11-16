@@ -124,17 +124,17 @@ $$('.mode-switch button').forEach((b) => b.addEventListener('click', () => setMo
 function renderFeedRail() {
   const rail = $('#feed-rail');
   rail.innerHTML = `<button class="rail-btn home ${FD.onHome ? 'active' : ''}" data-home title="All feeds">${icon('grid')}</button><span class="rail-sep"></span>` +
-    FEEDS.map((f) => `<button class="rail-btn ${!FD.onHome && FD.current === f.id ? 'active' : ''}" data-feed="${f.id}" title="${f.name}" style="--c:${f.color};${f.ring ? `box-shadow: inset 0 0 0 2px ${f.ring}` : ''}">${f.glyph}${FD.status[f.id] ? '<span class="on-dot" title="Signed in"></span>' : ''}</button>`).join('');
+    FEEDS.map((f) => `<button class="rail-btn ${!FD.onHome && FD.current === f.id ? 'active' : ''}" data-feed="${f.id}" title="${f.name}" style="--c:${f.color};${f.ring ? `box-shadow: inset 0 0 0 2px ${f.ring}` : ''}">${brandIcon(f.id) || f.glyph}${FD.status[f.id] ? '<span class="on-dot" title="Signed in"></span>' : ''}</button>`).join('');
 }
 function renderFeedCards() {
   $('#feed-cards').innerHTML = FEEDS.map((f) => {
     const on = !!FD.status[f.id];
     return `<div class="feed-card" style="--c:${f.color === '#111111' || f.color === '#2a2a2a' ? (f.ring || '#888') : f.color}">
-      <div class="fc-top"><div class="fc-icon" style="background:${f.color}">${f.glyph}</div>
+      <div class="fc-top"><div class="fc-icon" style="background:${f.color}">${brandIcon(f.id) || f.glyph}</div>
         <div><h3>${f.name}</h3><span class="fc-status ${on ? 'on' : ''}">${on ? icon('check') + ' Signed in' : 'Not signed in'}</span></div></div>
       <p class="fc-desc">${f.desc}${f.auto ? '' : ' (Auto next isn\'t available here.)'}</p>
       <div class="fc-actions">
-        <button class="btn primary" data-open="${f.id}">Open</button>
+        <button class="btn" data-open="${f.id}">Open</button>
         <button class="btn" data-${on ? 'signout' : 'signin'}="${f.id}">${on ? 'Sign out' : 'Sign in'}</button>
       </div></div>`;
   }).join('');

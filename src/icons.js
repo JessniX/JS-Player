@@ -61,6 +61,10 @@ function hydrateIcons(root = document) {
   root.querySelectorAll('i[data-icon]').forEach((el) => {
     el.outerHTML = icon(el.dataset.icon).replace('class="ico"', `class="ico" data-icon="${el.dataset.icon}"`);
   });
+  // Icon-only buttons: give screen readers the tooltip text as a name.
+  root.querySelectorAll('button[title]:not([aria-label])').forEach((b) => {
+    if (!b.textContent.trim()) b.setAttribute('aria-label', b.title.replace(/\s*\(.*\)$/, ''));
+  });
 }
 
 function setIcon(btn, name) {

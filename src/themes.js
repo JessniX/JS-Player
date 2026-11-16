@@ -14,6 +14,12 @@ const THEME_COLOR_KEYS = [
 const BASE_THEME = { radius: 10, alpha: 0.86, font: "'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif", scale: 1, bgImage: '', bgBlur: 18, css: '' };
 
 const PRESET_THEMES = [
+  // Default. Violet-tinted charcoal; one purple accent marks only what is active (play, progress, current
+  // track, selected tab). While music plays, album-art colour tints the stage (see ambience.js).
+  { name: 'Violet', bg: '#1e1b26', surface: '#26222f', elevated: '#312c3c', border: '#443d52', text: '#f2eff7', dim: '#aca5ba', accent: '#7c4dff', accent2: '#d6c8ff', radius: 8, alpha: 0.97 },
+  // Neutral graphite so video and album art carry the colour; one amber accent (a "tape is
+  // rolling" signal) marks only what is active: play, progress, the current track, the selected tab.
+  { name: 'Studio', bg: '#202226', surface: '#282a2f', elevated: '#33353b', border: '#43464d', text: '#f0efec', dim: '#a7a9af', accent: '#f0a83a', accent2: '#d9d4c7', radius: 8, alpha: 0.97 },
   { name: 'Midnight', bg: '#0d0f16', surface: '#151824', elevated: '#1e2232', border: '#2a2f42', text: '#e6e8f0', dim: '#8a90a6', accent: '#7c6cff', accent2: '#29d3c2' },
   { name: 'Synthwave', bg: '#140a1f', surface: '#1e0f2e', elevated: '#2a1640', border: '#3d2058', text: '#fbe9ff', dim: '#b58ac9', accent: '#ff3cac', accent2: '#2bd2ff', radius: 14 },
   { name: 'Ember', bg: '#120c0a', surface: '#1c1411', elevated: '#281c17', border: '#3a2a22', text: '#f6e8df', dim: '#a68d80', accent: '#ff6a2b', accent2: '#ffc93c' },
@@ -39,13 +45,18 @@ function applyTheme(theme) {
   for (const [k] of THEME_COLOR_KEYS) root.setProperty('--' + k, t[k]);
   for (const k of ['bg', 'surface', 'elevated', 'accent', 'accent2', 'text']) root.setProperty(`--${k}-rgb`, hexToRgb(t[k]).join(','));
   root.setProperty('--radius', t.radius + 'px');
+  // The corner slider is the multiplier for Astryx's radius steps; 8px (radius-element) is 1×.
+  root.setProperty('--radius-scale', t.radius / 8);
   root.setProperty('--alpha', t.alpha);
   root.setProperty('--font', t.font);
   root.setProperty('--bg-blur', t.bgBlur + 'px');
   root.setProperty('--on-accent', luminance(t.accent) > 0.6 ? '#111' : '#fff');
-  document.documentElement.style.fontSize = (14 * t.scale) + 'px';
+  // Astryx tokens are rem-based on a 16px root; the interface-scale slider scales that root.
+  document.documentElement.style.fontSize = (16 * t.scale) + 'px';
+  root.setProperty('--ui-scale', t.scale);
   const light = luminance(t.bg) > 0.5;
   document.documentElement.dataset.light = light ? '1' : '0';
+  document.documentElement.style.colorScheme = light ? 'light' : 'dark';
   const bd = document.getElementById('backdrop');
   if (bd) {
     bd.style.backgroundImage = t.bgImage ? `url("${window.prism.mediaUrl(t.bgImage)}")` : '';
