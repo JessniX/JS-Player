@@ -1,0 +1,32 @@
+{
+  "name": "prism-player",
+  "productName": "Prism Player",
+  "version": "0.1.0",
+  "description": "A customizable media player with live audio visualizers, themes, an equalizer and ffmpeg fallback for any file type.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "smoke": "electron . --smoke",
+    "dist": "electron-builder --win"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "optionalDependencies": {
+    "ffmpeg-static": "^5.2.0"
+  },
+  "build": {
+    "appId": "com.prism.player",
+    "productName": "Prism Player",
+    "files": ["main.js", "feeds-main.js", "preload.js", "src/**/*"],
+    "asarUnpack": ["node_modules/ffmpeg-static/**"],
+    "win": { "target": "nsis" },
+    "fileAssociations": [
+      { "ext": ["mp4", "mkv", "avi", "mov", "webm", "wmv", "flv", "m4v", "ts", "mpg", "mpeg", "3gp"], "name": "Video", "role": "Viewer" },
+      { "ext": ["mp3", "flac", "wav", "ogg", "opus", "m4a", "aac", "wma", "aiff", "alac", "ape"], "name": "Audio", "role": "Viewer" },
+      { "ext": ["jpg", "jpeg", "png", "gif", "webp", "avif", "bmp", "tif", "tiff", "heic", "svg", "ico"], "name": "Image", "role": "Viewer" }
+    ]
+  }
+}

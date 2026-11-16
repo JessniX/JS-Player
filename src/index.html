@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' prism: blob: data:; style-src 'self' 'unsafe-inline' prism:; img-src 'self' prism: blob: data:; media-src prism: blob:; font-src 'self' prism: data:; frame-src https:">
+  <title>Prism Player</title>
+  <link rel="stylesheet" href="styles.css">
+  <style id="custom-css"></style>
+</head>
+<body>
+  <div id="backdrop"></div>
+  <div id="app">
+    <!-- Title bar -->
+    <header id="titlebar">
+      <div class="brand"><span class="logo"></span>Prism</div>
+      <div class="mode-switch" role="tablist">
+        <button data-mode="player" class="active" title="Your videos, music and photos"><i data-icon="play"></i><span>Player</span></button>
+        <button data-mode="feeds" title="Scroll your social feeds"><i data-icon="feeds"></i><span>Feeds</span></button>
+      </div>
+      <nav class="menu">
+        <button data-cmd="open" title="Open files (Ctrl+O)"><i data-icon="file"></i><span>Open</span></button>
+        <button data-cmd="folder" title="Open folder (Ctrl+Shift+O)"><i data-icon="folder"></i><span>Folder</span></button>
+        <button data-cmd="subs" title="Load subtitles"><i data-icon="cc"></i><span>Subtitles</span></button>
+      </nav>
+      <div id="now-title" class="now-title"></div>
+      <div class="tb-right">
+        <button data-cmd="toggle-sidebar" title="Toggle panel (Tab)"><i data-icon="sidebar"></i></button>
+      </div>
+    </header>
+
+    <main id="main">
+      <!-- Stage: video, visualizer, overlays -->
+      <section id="stage">
+        <video id="media" preload="auto" playsinline></video>
+        <canvas id="viz"></canvas>
+        <div id="photo-wrap"><img id="photo" alt="" draggable="false"></div>
+        <div id="img-bar" class="img-bar">
+          <button class="icon-btn" data-img="zoom-out" title="Zoom out (−)"><i data-icon="zoomOut"></i></button>
+          <button class="pill" id="img-zoom" data-img="toggle-zoom" title="Fit / 100% (double-click)">Fit</button>
+          <button class="icon-btn" data-img="zoom-in" title="Zoom in (+)"><i data-icon="zoomIn"></i></button>
+          <button class="icon-btn" data-img="fit" title="Fit to window (0)"><i data-icon="fit"></i></button>
+          <span class="sep"></span>
+          <button class="icon-btn" data-img="rot-l" title="Rotate left (Shift+R)"><i data-icon="rotL"></i></button>
+          <button class="icon-btn" data-img="rot-r" title="Rotate right (R)"><i data-icon="rotR"></i></button>
+          <button class="icon-btn" data-img="flip" title="Flip (H)"><i data-icon="flip"></i></button>
+          <span class="sep"></span>
+          <button class="icon-btn" data-img="slideshow" id="img-slide" title="Slideshow (Space)"><i data-icon="slides"></i></button>
+          <button class="icon-btn" data-img="info" id="img-info-btn" title="Image info (I)"><i data-icon="info"></i></button>
+          <button class="icon-btn" data-img="filmstrip" id="img-strip-btn" title="Filmstrip (T)"><i data-icon="strip"></i></button>
+        </div>
+        <div id="img-info" class="img-info hidden"></div>
+        <div id="filmstrip" class="filmstrip"></div>
+        <div id="audio-info" class="hidden">
+          <img id="cover" alt="">
+          <div class="meta">
+            <div id="meta-title"></div>
+            <div id="meta-artist"></div>
+          </div>
+        </div>
+        <div id="empty" class="empty">
+          <div class="empty-logo"></div>
+          <h1>Drop anything here</h1>
+          <p>Video, music, photos, whole folders. If a format won't open natively, Prism converts it with ffmpeg.</p>
+          <div class="empty-actions">
+            <button class="btn primary" data-cmd="open"><i data-icon="file"></i> Open files</button>
+            <button class="btn" data-cmd="folder"><i data-icon="folder"></i> Open folder</button>
+          </div>
+        </div>
+        <div id="busy" class="busy hidden">
+          <div class="spinner"></div>
+          <div id="busy-text">Converting…</div>
+          <div class="busy-bar"><div id="busy-fill"></div></div>
+          <button class="btn small" id="busy-cancel">Cancel</button>
+        </div>
+        <div id="osd" class="osd"></div>
+        <div id="drop-hint" class="drop-hint hidden">Drop to play</div>
+      </section>
+
+      <!-- Side panel -->
+      <aside id="sidebar">
+        <div class="tabs" role="tablist">
+          <button class="tab active" data-tab="playlist" title="Playlist"><i data-icon="list"></i></button>
+          <button class="tab" data-tab="eq" title="Equalizer"><i data-icon="sliders"></i></button>
+          <button class="tab" data-tab="visualizer" title="Visualizer"><i data-icon="wave"></i></button>
+          <button class="tab" data-tab="themes" title="Themes"><i data-icon="palette"></i></button>
+          <button class="tab" data-tab="settings" title="Settings"><i data-icon="gear"></i></button>
+        </div>
+
+        <div class="panel active" data-panel="playlist">
+          <div class="panel-head">
+            <h2>Playlist <span id="pl-count" class="dim"></span></h2>
+            <div class="row gap">
+              <button class="icon-btn" id="pl-shuffle" title="Shuffle"><i data-icon="shuffle"></i></button>
+              <button class="icon-btn" id="pl-repeat" title="Repeat"><i data-icon="repeat"></i></button>
+              <button class="icon-btn" id="pl-sort" title="Sort by name"><i data-icon="sort"></i></button>
+              <button class="icon-btn" id="pl-clear" title="Clear playlist"><i data-icon="trash"></i></button>
+            </div>
+          </div>
+          <input id="pl-search" class="input" type="search" placeholder="Filter…">
+          <ol id="playlist"></ol>
+        </div>
+
+        <div class="panel" data-panel="eq">
+          <div class="panel-head">
+            <h2>Equalizer</h2>
+            <label class="switch"><input type="checkbox" id="eq-on"><span></span></label>
+          </div>
+          <select id="eq-preset" class="input"></select>
+          <div id="eq-bands" class="eq-bands"></div>
+          <div class="field"><label>Preamp <span id="preamp-val" class="dim"></span></label><input type="range" id="preamp" min="-12" max="12" step="0.5"></div>
+          <div class="field"><label>Stereo balance <span id="pan-val" class="dim"></span></label><input type="range" id="pan" min="-1" max="1" step="0.05"></div>
+          <div class="field"><label>Bass boost <span id="bass-val" class="dim"></span></label><input type="range" id="bass" min="0" max="15" step="0.5"></div>
+          <button class="btn small" id="eq-reset">Reset all</button>
+        </div>
+
+        <div class="panel" data-panel="visualizer">
+          <div class="panel-head"><h2>Visualizer</h2></div>
+          <div id="viz-modes" class="chip-grid"></div>
+          <div class="field"><label>Colors</label>
+            <select id="viz-color" class="input">
+              <option value="theme">Follow theme</option>
+              <option value="rainbow">Rainbow</option>
+              <option value="fire">Fire</option>
+              <option value="ice">Ice</option>
+              <option value="custom">Custom gradient</option>
+            </select>
+          </div>
+          <div class="row gap" id="viz-custom-colors">
+            <input type="color" id="viz-c1"><input type="color" id="viz-c2"><input type="color" id="viz-c3">
+          </div>
+          <div class="field"><label>Bars <span id="viz-bars-val" class="dim"></span></label><input type="range" id="viz-bars" min="16" max="256" step="8"></div>
+          <div class="field"><label>Sensitivity <span id="viz-sens-val" class="dim"></span></label><input type="range" id="viz-sens" min="0.4" max="2.5" step="0.05"></div>
+          <div class="field"><label>Smoothing <span id="viz-smooth-val" class="dim"></span></label><input type="range" id="viz-smooth" min="0" max="0.95" step="0.01"></div>
+          <div class="field"><label>Glow <span id="viz-glow-val" class="dim"></span></label><input type="range" id="viz-glow" min="0" max="40" step="1"></div>
+          <label class="check"><input type="checkbox" id="viz-peaks"> Peak caps</label>
+          <label class="check"><input type="checkbox" id="viz-pulse"> Pulse background on bass</label>
+          <label class="check"><input type="checkbox" id="viz-art"> Show album art &amp; title</label>
+          <label class="check"><input type="checkbox" id="viz-on-video"> Overlay on videos</label>
+        </div>
+
+        <div class="panel" data-panel="themes">
+          <div class="panel-head">
+            <h2>Themes</h2>
+            <div class="row gap">
+              <button class="icon-btn" id="theme-import" title="Import theme"><i data-icon="upload"></i></button>
+              <button class="icon-btn" id="theme-export" title="Export current theme"><i data-icon="download"></i></button>
+            </div>
+          </div>
+          <div id="theme-list" class="theme-grid"></div>
+          <h3>Customize</h3>
+          <div id="theme-colors" class="color-grid"></div>
+          <div class="field"><label>Corner radius <span id="radius-val" class="dim"></span></label><input type="range" id="t-radius" min="0" max="24" step="1"></div>
+          <div class="field"><label>Panel opacity <span id="alpha-val" class="dim"></span></label><input type="range" id="t-alpha" min="0.3" max="1" step="0.02"></div>
+          <div class="field"><label>Interface scale <span id="scale-val" class="dim"></span></label><input type="range" id="t-scale" min="0.8" max="1.4" step="0.05"></div>
+          <div class="field"><label>Font</label>
+            <select id="t-font" class="input">
+              <option value="'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif">Segoe UI</option>
+              <option value="'Inter', 'Segoe UI', system-ui, sans-serif">Inter</option>
+              <option value="'Bahnschrift', 'Segoe UI', sans-serif">Bahnschrift</option>
+              <option value="'Cascadia Code', 'Consolas', monospace">Cascadia Code</option>
+              <option value="Georgia, 'Times New Roman', serif">Georgia</option>
+              <option value="'Trebuchet MS', sans-serif">Trebuchet</option>
+              <option value="'Comic Sans MS', cursive">Comic Sans</option>
+            </select>
+          </div>
+          <div class="field"><label>Background image</label>
+            <div class="row gap"><button class="btn small" id="t-bg-pick">Choose…</button><button class="btn small" id="t-bg-clear">Remove</button></div>
+          </div>
+          <div class="field"><label>Background blur <span id="bgblur-val" class="dim"></span></label><input type="range" id="t-bgblur" min="0" max="40" step="1"></div>
+          <div class="row gap">
+            <input id="t-name" class="input" placeholder="Theme name">
+            <button class="btn small primary" id="t-save">Save as theme</button>
+          </div>
+          <details class="field">
+            <summary>Custom CSS (advanced)</summary>
+            <textarea id="t-css" class="input code" rows="8" spellcheck="false" placeholder="#controls { border-top: 2px solid var(--accent); }"></textarea>
+          </details>
+        </div>
+
+        <div class="panel" data-panel="settings">
+          <div class="panel-head"><h2>Settings</h2></div>
+          <h3>Playback</h3>
+          <label class="check"><input type="checkbox" id="s-resume"> Remember position in each file</label>
+          <label class="check"><input type="checkbox" id="s-autoplay"> Play files as soon as they are opened</label>
+          <label class="check"><input type="checkbox" id="s-autoconvert"> Convert unsupported formats automatically</label>
+          <label class="check"><input type="checkbox" id="s-autosubs"> Load matching subtitle files</label>
+          <div class="field"><label>Seek step <span id="seek-val" class="dim"></span></label><input type="range" id="s-seek" min="1" max="30" step="1"></div>
+          <h3>Images</h3>
+          <div class="field"><label>Slideshow speed <span id="slide-val" class="dim"></span></label><input type="range" id="s-slide" min="1" max="30" step="1"></div>
+          <div class="field"><label>Slideshow transition</label>
+            <select id="s-trans" class="input">
+              <option value="fade">Fade</option>
+              <option value="zoom">Fade &amp; zoom</option>
+              <option value="slide">Slide</option>
+              <option value="none">None</option>
+            </select>
+          </div>
+          <div class="field"><label>Image background</label>
+            <select id="s-imgbg" class="input">
+              <option value="theme">Theme</option>
+              <option value="black">Black</option>
+              <option value="checker">Checkerboard (shows transparency)</option>
+              <option value="blur">Blurred copy of the image</option>
+            </select>
+          </div>
+          <label class="check"><input type="checkbox" id="s-upscale"> Enlarge small images to fit the window</label>
+          <label class="check"><input type="checkbox" id="s-strip"> Show filmstrip</label>
+          <h3>Window</h3>
+          <label class="check"><input type="checkbox" id="s-ontop"> Always on top</label>
+          <label class="check"><input type="checkbox" id="s-autohide"> Hide controls while watching</label>
+          <h3>Subtitles</h3>
+          <div class="field"><label>Size <span id="sub-size-val" class="dim"></span></label><input type="range" id="s-subsize" min="60" max="220" step="5"></div>
+          <div class="row gap"><label class="color-field">Text <input type="color" id="s-subcolor"></label><label class="color-field">Background <input type="color" id="s-subbg"></label></div>
+          <div class="field"><label>Background opacity <span id="sub-bga-val" class="dim"></span></label><input type="range" id="s-subbga" min="0" max="1" step="0.05"></div>
+          <h3>Conversion cache</h3>
+          <p class="dim small" id="ffmpeg-status">Checking ffmpeg…</p>
+          <div class="row gap"><button class="btn small" id="s-cache-open">Open folder</button><button class="btn small" id="s-cache-clear">Clear cache</button></div>
+          <h3>Keyboard shortcuts</h3>
+          <dl class="keys" id="keys"></dl>
+        </div>
+      </aside>
+    </main>
+
+    <!-- Feeds -->
+    <section id="feeds" class="hidden">
+      <nav class="feed-rail" id="feed-rail"></nav>
+      <div class="feed-body">
+        <div class="feed-home" id="feed-home">
+          <div class="feed-hero">
+            <h1>Your feeds</h1>
+            <p>Pick a feed to start scrolling. Sign in once, and Prism remembers you.</p>
+          </div>
+          <div class="feed-cards" id="feed-cards"></div>
+          <div class="feed-card wide auto-card">
+            <div class="auto-text">
+              <h3>Auto next</h3>
+              <p>When a video or short finishes, jump to the next one by itself. Leave it off to scroll at your own pace.</p>
+            </div>
+            <label class="switch big"><input type="checkbox" id="feed-auto-home"><span></span></label>
+          </div>
+          <p class="feed-privacy"><i data-icon="lock"></i> You sign in on each site's own page. Prism never sees your password, and everything stays on this PC.</p>
+        </div>
+
+        <div class="feed-view hidden" id="feed-view">
+          <div class="feed-bar">
+            <button class="icon-btn" id="fb-home" title="All feeds"><i data-icon="grid"></i></button>
+            <button class="icon-btn" id="fb-back" title="Back"><i data-icon="arrowL"></i></button>
+            <button class="icon-btn" id="fb-fwd" title="Forward"><i data-icon="arrowR"></i></button>
+            <button class="icon-btn" id="fb-reload" title="Reload"><i data-icon="reload"></i></button>
+            <button class="icon-btn" id="fb-top" title="Back to the start of this feed"><i data-icon="house"></i></button>
+            <div class="fb-title"><span class="fb-dot" id="fb-dot"></span><span id="fb-name"></span><span class="fb-status" id="fb-status"></span></div>
+            <label class="auto-toggle" id="fb-auto-wrap" title="Skip to the next video when one finishes">
+              <span>Auto next</span>
+              <span class="switch"><input type="checkbox" id="fb-auto"><span></span></span>
+            </label>
+            <button class="btn small" id="fb-sign">Sign in</button>
+          </div>
+          <div class="feed-ask hidden" id="feed-ask">
+            <span>👋 Want Prism to skip to the next video automatically when one finishes?</span>
+            <button class="btn small primary" id="ask-yes">Yes, turn it on</button>
+            <button class="btn small" id="ask-no">No thanks</button>
+          </div>
+          <div class="feed-frames" id="feed-frames"></div>
+          <div class="feed-error hidden" id="feed-error">
+            <h3>This feed didn't load</h3>
+            <p id="feed-error-text">Check your internet connection and try again.</p>
+            <button class="btn primary" id="feed-retry">Try again</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Controls -->
+    <footer id="controls">
+      <div class="seek-row">
+        <span id="t-cur" class="time">0:00</span>
+        <div id="seek" class="seek">
+          <div class="seek-track"><div id="seek-buf"></div><div id="seek-fill"></div><div id="seek-ab"></div></div>
+          <div id="seek-thumb"></div>
+          <div id="seek-tip" class="seek-tip"></div>
+        </div>
+        <span id="t-dur" class="time">0:00</span>
+      </div>
+      <div class="ctl-row">
+        <div class="ctl-left">
+          <button class="icon-btn" id="b-prev" title="Previous (P)"><i data-icon="prev"></i></button>
+          <button class="icon-btn" id="b-back" title="Back"><i data-icon="back"></i></button>
+          <button class="icon-btn big" id="b-play" title="Play / pause (Space)"><i data-icon="play"></i></button>
+          <button class="icon-btn" id="b-fwd" title="Forward"><i data-icon="fwd"></i></button>
+          <button class="icon-btn" id="b-next" title="Next (N)"><i data-icon="next"></i></button>
+          <button class="icon-btn" id="b-stop" title="Stop"><i data-icon="stop"></i></button>
+        </div>
+        <div class="ctl-mid">
+          <span id="img-counter"></span>
+          <button class="pill" id="b-speed" title="Speed ([ and ])">1.00×</button>
+          <button class="pill" id="b-ab" title="A-B loop (L)">A-B</button>
+          <button class="pill" id="b-viz" title="Cycle visualizer (V)">Bars</button>
+        </div>
+        <div class="ctl-right">
+          <button class="icon-btn" id="b-shot" title="Screenshot (S)"><i data-icon="camera"></i></button>
+          <button class="icon-btn" id="b-pip" title="Picture in picture"><i data-icon="pip"></i></button>
+          <button class="icon-btn" id="b-mute" title="Mute (M)"><i data-icon="vol"></i></button>
+          <input type="range" id="volume" min="0" max="2" step="0.01" title="Volume (up to 200%)">
+          <span id="vol-val" class="time">100%</span>
+          <button class="icon-btn" id="b-full" title="Fullscreen (F / double-click)"><i data-icon="full"></i></button>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <script src="icons.js"></script>
+  <script src="themes.js"></script>
+  <script src="visualizer.js"></script>
+  <script src="app.js"></script>
+  <script src="imageviewer.js"></script>
+  <script src="feeds.js"></script>
+</body>
+</html>
