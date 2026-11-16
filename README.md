@@ -6,7 +6,7 @@
 
 Live audio visualizers Â· Full theme editor Â· 10-band equalizer Â· ffmpeg conversion for formats it can't open itself Â· Social feeds with optional auto next
 
-[**⬇ Download for Windows**](https://github.com/multiplayereverything/JS-Player/releases/latest) · [What's new](https://github.com/multiplayereverything/JS-Player/releases)
+[**⬇ Download for Windows**](https://github.com/JessniX/JS-Player/releases/latest) · [What's new](https://github.com/JessniX/JS-Player/releases)
 
 ![JS Player showing the Halo visualizer in the Ember theme](docs/screenshots/hero-halo-visualizer.png)
 
@@ -90,7 +90,7 @@ You can pick colors (your theme's, rainbow, fire, ice or your own 3-color gradie
 ## Getting started
 
 ### Install (easiest)
-Download **`JS-Player-Setup-x.y.z.exe`** from the [latest release](https://github.com/multiplayereverything/JS-Player/releases/latest) and run it. ffmpeg is included.
+Download **`JS-Player-Setup-x.y.z.exe`** from the [latest release](https://github.com/JessniX/JS-Player/releases/latest) and run it. ffmpeg is included.
 If Windows shows "Windows protected your PC" (the installer isn't code-signed yet), click **More info → Run anyway**.
 
 ### Run from source
@@ -105,7 +105,7 @@ If Windows shows "Windows protected your PC" (the installer isn't code-signed ye
 
 #### Install and run
 ```bash
-git clone https://github.com/multiplayereverything/JS-Player.git
+git clone https://github.com/JessniX/JS-Player.git
 ```
 ```bash
 cd JS-Player
