@@ -6,6 +6,8 @@
 
 Live audio visualizers Â· Full theme editor Â· 10-band equalizer Â· ffmpeg conversion for formats it can't open itself Â· Social feeds with optional auto next
 
+[**⬇ Download for Windows**](https://github.com/JessniX/JS-Player/releases/latest) · [What's new](https://github.com/JessniX/JS-Player/releases)
+
 ![JS Player showing the Halo visualizer in the Ember theme](docs/screenshots/hero-halo-visualizer.png)
 
 </div>
@@ -86,7 +88,13 @@ You can pick colors (your theme's, rainbow, fire, ice or your own 3-color gradie
 
 ## Getting started
 
-### Requirements
+### Install (easiest)
+Download **`JS-Player-Setup-x.y.z.exe`** from the [latest release](https://github.com/JessniX/JS-Player/releases/latest) and run it. ffmpeg is included.
+If Windows shows "Windows protected your PC" (the installer isn't code-signed yet), click **More info → Run anyway**.
+
+### Run from source
+
+#### Requirements
 - **Windows 10 or 11**. macOS and Linux should work too, but haven't been tested.
 - **[Node.js](https://nodejs.org) 18 or newer**
 - **ffmpeg** (optional, needed only for formats that don't open directly). `npm install` tries to download one automatically. If that fails, install it yourself:
@@ -94,7 +102,7 @@ You can pick colors (your theme's, rainbow, fire, ice or your own 3-color gradie
   winget install ffmpeg
   ```
 
-### Install and run
+#### Install and run
 ```bash
 git clone https://github.com/JessniX/JS-Player.git
 ```
@@ -110,7 +118,7 @@ npm start
 
 On Windows you can also just double-click **`Start JS Player.bat`**. It installs everything the first time.
 
-### Build an installer
+#### Build an installer
 ```bash
 npm run dist
 ```
