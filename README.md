@@ -1,70 +1,250 @@
+<div align="center">
+
 # Prism Player
 
-A customizable desktop media player with live visualizers, themes, an equalizer and ffmpeg conversion for formats the built-in decoder can't handle.
+**A media player, image viewer and feed scroller that plays almost anything and looks the way you want.**
 
-## Run it
+Live audio visualizers · Full theme editor · 10-band equalizer · ffmpeg conversion for formats it can't open itself · Social feeds with optional auto next
 
+![Prism Player showing the Halo visualizer in the Ember theme](docs/screenshots/hero-halo-visualizer.png)
+
+</div>
+
+---
+
+## Contents
+
+- [Features](#features)
+- [Screenshots](#screenshots)
+- [Getting started](#getting-started)
+- [Keyboard shortcuts](#keyboard-shortcuts)
+- [Supported formats](#supported-formats)
+- [Feeds and privacy](#feeds-and-privacy)
+- [Customizing and extending](#customizing-and-extending)
+- [Project structure](#project-structure)
+- [Development](#development)
+- [License](#license)
+
+---
+
+## Features
+
+### 🎵 Plays almost anything
+- Video and audio play directly where possible: MP4, MKV, WebM, MP3, FLAC, WAV, OGG, Opus, AAC and more.
+- Anything else (AVI, WMV, FLV, MPEG-2, HEVC without hardware support, WMA, APE, AC3, DTS…) is **converted once with ffmpeg and cached**, so it opens instantly next time. A progress bar shows while it converts.
+- When only the audio is unsupported, the video is copied as-is, so conversion takes seconds.
+
+### 🌈 Live visualizers
+Seven modes that react to the music: **Bars**, **Mirror**, **Silk**, **Scope**, **Halo** (a ring around the album art), **Nebula** (particles that burst on the bass) and **Waterfall** (a scrolling spectrogram).
+You can pick colors (your theme's, rainbow, fire, ice or your own 3-color gradient) and set the bar count, sensitivity, smoothing, glow and peak caps. The background can pulse with the bass, and the visualizer can play over videos.
+
+### 🎨 Make it yours
+- **10 built-in themes**, from dark Midnight and Synthwave to light Paper and Snow.
+- **Live theme editor:** every color, corner roundness, panel transparency, interface size, font, and a background image with blur.
+- **Custom CSS** box for anything else.
+- Save your own themes and **share them** as `.json` files.
+
+### 🎚️ Sound
+- 10-band equalizer with 12 presets, plus preamp, bass boost and stereo balance.
+- Volume up to **200%**.
+
+### ▶️ Playback
+- Playlist with drag-to-reorder, filter, shuffle and repeat (all or one).
+- **Remembers where you stopped** in every file.
+- A-B looping, speed from 0.25× to 4× (pitch stays the same), frame-by-frame stepping.
+- Screenshots, picture-in-picture, fullscreen with auto-hiding controls, always on top, media-key support.
+- **Subtitles** (`.srt` / `.vtt`) load automatically when they sit next to the video. Size and colors are adjustable.
+
+### 🖼️ Image viewer
+- Opens JPEG, PNG, animated GIF, WebP, AVIF, BMP, SVG and ICO directly. TIFF, HEIC, PSD, TGA, DDS, EXR, JPEG 2000 and JPEG XL are converted with ffmpeg.
+- Open one photo and the rest of its folder comes along.
+- Zoom toward the cursor, drag to pan, fit or 100%, rotate, flip.
+- **Slideshow** with fade, zoom or slide transitions, a **filmstrip** of thumbnails, an info panel, and a choice of background (theme, black, checkerboard for transparency, or a blurred copy of the photo).
+
+### 📱 Feeds
+- Scroll **YouTube Shorts, TikTok, Instagram Reels, Facebook Reels, X and Reddit** without leaving the app.
+- Sign in once on each site's own page and Prism remembers you.
+- **Auto next** (your choice, off by default) jumps to the next video when one finishes.
+- See [Feeds and privacy](#feeds-and-privacy).
+
+---
+
+## Screenshots
+
+| | |
+|:---:|:---:|
+| ![Welcome screen with Open files and Open folder buttons](docs/screenshots/welcome.png) | ![Bars visualizer with album art and the playlist](docs/screenshots/player-bars.png) |
+| **Welcome screen.** Drop files or folders anywhere. | **Bars visualizer** with album art and the playlist. |
+| ![Equalizer with the Electronic preset and the Silk visualizer](docs/screenshots/equalizer.png) | ![Light Paper theme with the theme editor open](docs/screenshots/themes-light.png) |
+| **Equalizer** with the Silk visualizer in the Synthwave theme. | **Theme editor** in the light Paper theme. |
+| ![Video playing with subtitles](docs/screenshots/video-subtitles.png) | ![Image viewer with filmstrip and blurred background](docs/screenshots/image-viewer.png) |
+| **Video** with subtitles loaded automatically. | **Image viewer** with filmstrip, in the Terminal theme. |
+| ![Feeds screen with a card for each social site](docs/screenshots/feeds.png) | ![Settings panel](docs/screenshots/settings.png) |
+| **Feeds.** Pick a site, sign in, scroll. | **Settings** for playback, images, window and subtitles. |
+
+---
+
+## Getting started
+
+### Requirements
+- **Windows 10 or 11**. macOS and Linux should work too, but haven't been tested.
+- **[Node.js](https://nodejs.org) 18 or newer**
+- **ffmpeg** (optional, needed only for formats that don't open directly). `npm install` tries to download one automatically. If that fails, install it yourself:
+  ```bash
+  winget install ffmpeg
+  ```
+
+### Install and run
+```bash
+git clone https://github.com/JessniX/JS-Player.git
 ```
+```bash
+cd JS-Player
+```
+```bash
 npm install
+```
+```bash
 npm start
 ```
 
-Or double-click `Start Prism.bat`. To build a Windows installer with file associations: `npm run dist`.
+On Windows you can also just double-click **`Start Prism.bat`**. It installs everything the first time.
 
-## What it does
+### Build an installer
+```bash
+npm run dist
+```
+This makes a Windows installer in `dist/` that associates video, audio and image files with Prism.
 
-- **Plays almost anything.** Common formats (MP4, MKV/H.264, WebM, MP3, FLAC, WAV, OGG, Opus, AAC) play natively. Anything else (AVI/MPEG-2, WMV, FLV, HEVC on machines without hardware support, WMA, APE, AC3/DTS…) is converted once with ffmpeg and cached, then plays with seeking. If only the audio stream is unsupported, the video is copied as-is so conversion is fast.
-- **7 live visualizers:** Bars, Mirror, Silk, Scope, Halo (ring around the album art), Nebula (particles that react to bass), Waterfall (spectrogram). You can set colors (theme, rainbow, fire, ice, custom 3-color gradient), bar count, sensitivity, smoothing, glow and peak caps, turn on a background pulse with the bass, and overlay the visualizer on videos.
-- **Themes:** 10 built-in themes. You can edit every color, the corner radius, panel transparency, interface scale, font, a background image with blur, and add your own CSS. Save your own themes and import/export them as `.json`.
-- **Audio:** 10-band EQ with 12 presets, preamp, bass boost, stereo balance, volume up to 200%.
-- **Playback:** playlist with drag reorder, filter, shuffle and repeat. Remembers where you stopped in each file. A-B loop, speed 0.25–4× (pitch kept), frame step, screenshots, picture-in-picture, fullscreen with auto-hiding controls, always on top, Windows media keys.
-- **Subtitles:** loads `.srt`/`.vtt` files automatically when they sit next to the video, or by drag-drop. Size and colors are adjustable.
-- **Image viewer:** JPEG, PNG, GIF (animated), WebP, AVIF, BMP, SVG and ICO open directly. TIFF, HEIC, TGA, PSD, DDS, EXR, JPEG 2000, JPEG XL and others are converted once with ffmpeg. Opening one photo loads the rest of its folder. You can zoom with the wheel toward the cursor, drag to pan, fit or view at 100%, rotate and flip. There's a slideshow (1–30s, with fade, zoom or slide transitions), a filmstrip with cached thumbnails, an info panel, and a choice of background (theme, black, checkerboard for transparency, or a blurred copy of the photo). Photos and media can share one playlist. Opening a music folder skips its cover images.
-- **Feeds:** switch to **Feeds** in the title bar to scroll YouTube Shorts, TikTok, Instagram Reels, Facebook Reels, X and Reddit inside Prism. You sign in on each site's own page; Prism never sees your password and only checks whether you're signed in, to show it on the cards. Sign-ins are kept in a separate, saved session, and each card has a Sign out button. **Auto next** (off by default, and Prism asks the first time) skips to the next video when one finishes. It uses the site's own "next" button, then the ↓ key, then scrolling. Videos in feeds you've left are paused and muted.
-- **Opening files:** drag and drop files or whole folders, open with, or the command line.
+---
 
-## Keyboard
+## Keyboard shortcuts
 
-| Key | Action |
-|---|---|
-| Space / K | Play / pause |
-| ← / → | Seek (Shift 1s, Ctrl 60s) |
-| ↑ / ↓ | Volume |
-| M | Mute |
-| F / Enter / double-click | Fullscreen |
-| N / P | Next / previous |
-| [ / ] / Backspace | Slower / faster / normal |
-| , / . | Frame step |
-| L | A-B loop |
-| V | Next visualizer |
-| S | Screenshot |
-| Tab | Toggle side panel |
-| 0–9 | Jump to 0–90% |
-
-When viewing images:
+<details open>
+<summary><b>Player</b></summary>
 
 | Key | Action |
 |---|---|
-| ← / → / PgUp / PgDn | Previous / next image |
-| Wheel, + / − | Zoom (Shift+wheel: next image) |
+| `Space` / `K` | Play / pause |
+| `←` / `→` | Seek (`Shift` = 1s, `Ctrl` = 60s) |
+| `↑` / `↓` | Volume |
+| `M` | Mute |
+| `F` / `Enter` / double-click | Fullscreen |
+| `Esc` | Leave fullscreen |
+| `N` / `P` | Next / previous |
+| `[` / `]` / `Backspace` | Slower / faster / normal speed |
+| `,` / `.` | Frame step (while paused) |
+| `L` | A-B loop |
+| `V` | Next visualizer |
+| `S` | Screenshot |
+| `Tab` | Show / hide the side panel |
+| `0`–`9` | Jump to 0–90% |
+| `Ctrl+O` / `Ctrl+Shift+O` | Open files / open folder |
+
+</details>
+
+<details>
+<summary><b>Image viewer</b></summary>
+
+| Key | Action |
+|---|---|
+| `←` / `→` / `PgUp` / `PgDn` | Previous / next image |
+| Mouse wheel, `+` / `−` | Zoom (`Shift`+wheel: next image) |
 | Drag | Pan |
-| 0 / 1 / double-click | Fit / 100% / toggle |
-| R / Shift+R | Rotate right / left |
-| H | Flip |
-| Space | Slideshow |
-| I / T | Info panel / filmstrip |
-| Home / End | First / last image |
+| `0` / `1` / double-click | Fit / 100% / toggle |
+| `R` / `Shift+R` | Rotate right / left |
+| `H` | Flip |
+| `Space` | Slideshow |
+| `I` / `T` | Info panel / filmstrip |
+| `Home` / `End` | First / last image |
 
-## Layout
+</details>
 
-- `main.js`: window, `prism://` protocol (UI and ranged media streaming), ffmpeg probe/convert/cover art, settings
-- `preload.js`: safe bridge to the renderer
-- `src/app.js`: player, playlist, EQ, settings and theme editor
-- `feeds-main.js`: Feeds session, webview lockdown, sign-in status and sign out
-- `src/feeds.js`: Feeds screen, site list (add a site to `FEEDS`), auto next
-- `src/imageviewer.js`: image viewing, slideshow, filmstrip, info panel
-- `src/visualizer.js`: visualizer modes. Add a mode by writing a `draw_<id>()` method and listing it in `VIZ_MODES`
-- `src/themes.js`: theme presets and how they're applied
-- `src/styles.css`: all styling (everything uses CSS variables)
+---
 
-Settings are stored in `%APPDATA%\prism-player\settings.json`.
+## Supported formats
+
+| Type | Plays directly | Converted with ffmpeg (cached) |
+|---|---|---|
+| **Video** | MP4, M4V, MKV (H.264/VP9/AV1), WebM, OGV, MOV (H.264) | AVI, WMV, FLV, MPEG/VOB, TS/M2TS, 3GP, RM/RMVB, ASF, HEVC on PCs without hardware support, and more |
+| **Audio** | MP3, FLAC, WAV, OGG, Opus, M4A/AAC | WMA, APE, WavPack, AC3, DTS, AIFF, ALAC, AMR, TTA, DSD (DSF/DFF), MKA |
+| **Images** | JPEG, PNG, APNG, GIF, WebP, AVIF, BMP, SVG, ICO | TIFF, HEIC/HEIF*, PSD, TGA, DDS, EXR, HDR, JPEG 2000, JPEG XL, QOI, PCX, PNM |
+| **Subtitles** | SRT, VTT | — |
+
+\* HEIC support depends on your ffmpeg version.
+
+Converted files are kept in the app's cache folder. Clear it from **Settings → Conversion cache**.
+
+---
+
+## Feeds and privacy
+
+- **You sign in on each site's own page.** Prism never sees, stores or sends your password.
+- Sign-ins are kept in a **separate, saved browser session** used only by Feeds. To tell whether you're signed in, Prism checks which login cookies exist; it never reads their values.
+- **Sign out** on any card clears that site's cookies and storage from Prism.
+- Feed pages run in sandboxed views without access to your files or the rest of the app. Pop-ups (such as "Continue with Google") open in a small window in the same session.
+- **Auto next is off by default.** Prism asks the first time you open a video feed. When it's on and a video finishes, Prism clicks the site's own "next" button if it has one, otherwise presses `↓`, otherwise scrolls down one screen. It works on YouTube Shorts, TikTok, Instagram and Facebook.
+- When you leave a feed, its videos are paused and muted.
+
+> **Note:** Google sometimes blocks sign-in from embedded browsers ("This browser or app may not be secure"). Prism identifies itself like a normal browser to reduce this, but it can't be guaranteed. Prism isn't affiliated with any of these platforms; their names belong to their owners, and using them is subject to each site's terms.
+
+---
+
+## Customizing and extending
+
+| I want to… | Where |
+|---|---|
+| Add a visualizer | `src/visualizer.js`: write a `draw_<id>()` method and add it to `VIZ_MODES` |
+| Add a built-in theme | `src/themes.js`: add an entry to `PRESET_THEMES` |
+| Add an EQ preset | `src/app.js`: `EQ_PRESETS` |
+| Add a feed site | `src/feeds.js`: add an entry to `FEEDS` (and its login cookie in `feeds-main.js`) |
+| Restyle anything | Theme editor → **Custom CSS**, or `src/styles.css` (everything uses CSS variables) |
+
+Settings are saved in `%APPDATA%\prism-player\settings.json`.
+
+---
+
+## Project structure
+
+```
+JS-Player/
+├── main.js            # Window, prism:// protocol (UI + streaming), ffmpeg probe/convert, settings
+├── feeds-main.js      # Feeds session, locked-down webviews, sign-in status, sign out
+├── preload.js         # Safe bridge between the app window and the main process
+├── src/
+│   ├── index.html     # Layout
+│   ├── styles.css     # All styling (theme variables)
+│   ├── app.js         # Player, playlist, equalizer, settings, theme editor
+│   ├── visualizer.js  # Visualizer modes
+│   ├── imageviewer.js # Image viewer, slideshow, filmstrip
+│   ├── feeds.js       # Feeds screen and auto next
+│   ├── themes.js      # Built-in themes
+│   └── icons.js       # Icon set
+├── docs/screenshots/  # Images used in this README
+└── Start Prism.bat    # Double-click launcher for Windows
+```
+
+Built with [Electron](https://www.electronjs.org/), the Web Audio API and [ffmpeg](https://ffmpeg.org/).
+
+---
+
+## Development
+
+`npm run smoke` runs the app in a self-test mode that loads, runs scripted steps and saves screenshots, then quits. Useful environment variables:
+
+| Variable | Purpose |
+|---|---|
+| `PRISM_SMOKE_STEPS` | JavaScript steps to run in the window, separated by `\|\|\|` |
+| `PRISM_SMOKE_DIR` | Where screenshots are saved |
+| `PRISM_SMOKE_SIZE` | Window size, such as `1440x880` |
+| `PRISM_SMOKE_SILENT` | Mute audio during the run |
+| `PRISM_SMOKE_SHOW` | Show the window (needed for Feeds to load at full speed) |
+| `PRISM_DEBUG` | Path of a log file for startup diagnostics |
+
+The screenshots in this README were made this way, using generated demo media.
+
+---
+
+## License
+
+[MIT](LICENSE)

@@ -347,6 +347,9 @@ function smokeTest() {
   });
   win.webContents.once('did-finish-load', async () => {
     if (process.env.PRISM_SMOKE_SHOW) win.showInactive(); // embedded pages only run at full speed in a visible window
+    if (process.env.PRISM_SMOKE_SILENT) win.webContents.setAudioMuted(true);
+    const size = /^(\d+)x(\d+)$/.exec(process.env.PRISM_SMOKE_SIZE || '');
+    if (size) win.setContentSize(+size[1], +size[2]);
     const shotDir = process.env.PRISM_SMOKE_DIR || app.getPath('temp');
     const steps = (process.env.PRISM_SMOKE_STEPS || '').split('|||').filter(Boolean);
     await new Promise((r) => setTimeout(r, 4000));

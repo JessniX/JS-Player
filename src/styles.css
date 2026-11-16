@@ -357,6 +357,7 @@ body.image-mode #img-counter { display: inline-block; color: var(--dim); font-si
 .mode-switch button .ico { width: 1.05em; height: 1.05em; }
 .mode-switch button:hover { color: var(--text); }
 .mode-switch button.active { background: var(--accent); color: var(--on-accent); }
+body.feeds-mode .menu, body.feeds-mode .now-title { visibility: hidden; }
 body.feeds-mode .menu { display: none; }
 
 /* ---------- feeds ---------- */
