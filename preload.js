@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld('prism', {
   remoteUrl: (u, headers) => 'prism://app/remote?u=' + encodeURIComponent(u) + (headers ? '&h=' + encodeURIComponent(JSON.stringify(headers)) : ''),
   torrentStart: (args) => ipcRenderer.invoke('torrent-start', args),
   torrentStatus: () => ipcRenderer.invoke('torrent-status'),
+  torrentWarm: () => ipcRenderer.invoke('torrent-warm'),
   torrentStop: () => ipcRenderer.invoke('torrent-stop'),
   torrentOptions: (o) => ipcRenderer.invoke('torrent-options', o),
   streamPlan: (url, headers) => ipcRenderer.invoke('stream-plan', url, headers),

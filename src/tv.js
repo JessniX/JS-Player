@@ -117,7 +117,7 @@ window.addEventListener('keydown', (e) => {
   if (k === 'Escape' || k === 'BrowserBack' || k === 'GoBack' || (k === 'Backspace' && !typing)) { tvBack(); handled = true; }
   else if (FD.mode === 'player' && !document.querySelector('dialog[open]') && (document.activeElement === document.body || document.activeElement === video)) {
     // watching: arrows seek/volume (the normal shortcuts); Enter plays/pauses
-    if (k === 'Enter') { togglePlay(); handled = true; }
+    if (k === 'Enter') { if (typeof upNextVisible === 'function' && upNextVisible()) playUpNext(); else togglePlay(); handled = true; }
   } else if (dirs[k]) {
     if (typing && (k === 'ArrowLeft' || k === 'ArrowRight')) return; // move the text cursor
     if (t.tagName === 'SELECT' && (k === 'ArrowUp' || k === 'ArrowDown')) return; // change the option

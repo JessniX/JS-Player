@@ -257,6 +257,7 @@ function draw() {
 }
 
 function emptyState(text) {
+  hideLoader();
   dcBody().innerHTML = `<div class="dc-empty">${icon('compass')}<h2>Nothing to show yet</h2><p>${text}</p>
     <button class="btn primary" data-cmd="manage-addons">${icon('puzzle')} Manage add-ons</button></div>`;
 }
@@ -302,6 +303,7 @@ function drawHome(token) {
       <button class="btn dc-surprise" id="dc-surprise" title="Pick something at random">🎲 Surprise me</button>
     </div>
     ${genres.length ? `<div class="dc-genres" role="list">${genres.map((g) => `<button class="dc-genre" role="listitem" data-genre="${escapeHtml(g)}">${escapeHtml(genreLabel(g))}</button>`).join('')}</div>` : ''}
+    ${typeof continueRowHtml === 'function' ? continueRowHtml(type) : ''}
     ${typeof libraryRowsHtml === 'function' ? libraryRowsHtml(type) : ''}
     ${cats.map(({ addon, cat }, i) => rowHtml(rowTitle(cat), cats.length > 1 && new Set(cats.map((c) => c.addon)).size > 1 ? addon.manifest.name : '', `${i}`)).join('')}
   </div>`;
@@ -313,10 +315,60 @@ function drawHome(token) {
     while (next < rows.length && token === DC.token) {
       const i = next++;
       const metas = await fillRow(rows[i], catalogUrl(cats[i].addon, cats[i].cat), token);
+      if (i === 0) hideLoader();
       if (i === 0 && metas.length) setupBanner(metas, token);
     }
   };
   for (let w = 0; w < 3; w++) worker();
+  drawEndless(cats, token);
+}
+
+// Under the rows: the whole Popular list as a grid that keeps loading as you scroll.
+// Placed right after "Featured picks" when there is one, otherwise at the end.
+function drawEndless(cats, token) {
+  const pages = cats.filter(({ cat }) => hasExtra(cat, 'skip'));
+  const src = pages.find(({ cat }) => /^(top|popular)$/i.test(cat.id) || /^popular$/i.test(cat.name || '')) || pages[0];
+  if (!src) return;
+  const rows = [...dcBody().querySelectorAll('.dc-row:not(.lib)')];
+  const featured = rows[cats.findIndex(({ cat }) => /featured/i.test(cat.name || cat.id))];
+  const section = document.createElement('section');
+  section.className = 'dc-row dc-endless';
+  section.innerHTML = `<div class="dc-row-head"><h3>All popular ${escapeHtml((TYPE_NAMES[src.cat.type] || src.cat.type).toLowerCase())}</h3></div>
+    <div class="dc-grid"></div><div class="dc-more"><span class="dc-end-sentinel"></span></div>`;
+  const anchor = featured || rows[rows.length - 1];
+  if (anchor) anchor.after(section); else dcBody().querySelector('.dc-home').append(section);
+  const grid = section.querySelector('.dc-grid');
+  const seen = new Set();
+  let skip = 0, busy = false, done = false;
+  const load = async () => {
+    if (busy || done || token !== DC.token) return;
+    busy = true;
+    grid.insertAdjacentHTML('beforeend', skeletons(12));
+    try {
+      const data = await getJSON(catalogUrl(src.addon, src.cat, skip ? { skip } : {}));
+      if (token !== DC.token) return;
+      const metas = (data.metas || []).filter((m) => m && m.id);
+      skip += metas.length;
+      const fresh = metas.filter((m) => !seen.has(m.id) && seen.add(m.id));
+      grid.querySelectorAll('.skeleton').forEach((s) => s.remove());
+      grid.insertAdjacentHTML('beforeend', fresh.map(posterCard).join(''));
+      if (!metas.length) { done = true; section.querySelector('.dc-more').innerHTML = '<p class="dim">That\'s everything.</p>'; }
+    } catch (err) {
+      grid.querySelectorAll('.skeleton').forEach((s) => s.remove());
+      done = true;
+      section.querySelector('.dc-more').innerHTML = `<p class="dim">Couldn't load more: ${escapeHtml(err.message)}</p>`;
+    } finally {
+      busy = false;
+    }
+    // still near the bottom (tall window, or a page of repeats): keep going
+    if (!done && sentinel.getBoundingClientRect().top < dcBody().getBoundingClientRect().bottom + 800) load();
+  };
+  const sentinel = section.querySelector('.dc-end-sentinel');
+  const io = new IntersectionObserver((es) => {
+    if (token !== DC.token || !section.isConnected) return io.disconnect();
+    if (es.some((e) => e.isIntersecting)) load();
+  }, { root: dcBody(), rootMargin: '800px' });
+  io.observe(sentinel);
 }
 
 // big rotating "featured" banner at the top of the home page
@@ -579,10 +631,11 @@ function streamRowHtml(it, showAddon) {
     info.seeders != null ? `<span class="sb-meta">👤 ${info.seeders}</span>` : '',
     showAddon ? `<span class="sb-addon">${escapeHtml(it.addon.manifest.name)}</span>` : '',
   ].join('');
-  return `<button class="dc-stream kind-${kind.k}" data-k="${it.k}" ${kind.k === 'none' ? 'disabled' : ''}>
+  const canQueue = kind.k === 'url' || kind.k === 'torrent';
+  return `<div class="ds-row"><button class="dc-stream kind-${kind.k}" data-k="${it.k}" ${kind.k === 'none' ? 'disabled' : ''}>
     <span class="ds-name">${lines(s.name || it.addon.manifest.name)}</span>
     <span class="ds-body"><span class="ds-badges">${badges}</span><span class="ds-title">${lines(String(s.title || s.description || '').replace(/[ \t]*(💾\s*[\d.,]+\s*[KMGT]B|👤\s*\d+)/g, ''))}</span></span>
-    <span class="ds-kind">${escapeHtml(kind.label)}</span></button>`;
+    <span class="ds-kind">${escapeHtml(kind.label)}</span></button>${canQueue ? `<button class="icon-btn ds-add" data-add="${it.k}" title="Add to playlist" aria-label="Add to playlist">${icon('listAdd')}</button>` : ''}</div>`;
 }
 function renderStreamList() {
   const SL = DC.streamList;
@@ -631,7 +684,8 @@ const TORRENT_NOTICE = 'Torrent streams download the video from other people and
   + 'Your IP address is visible to others sharing the same torrent, and in many countries sharing copyrighted videos is illegal. '
   + 'Only watch videos you have the right to watch.\n\nPlay this torrent stream?';
 
-async function playStream({ s, meta, video, addon, addonObj }) {
+// queue: add it to the playlist instead of playing it now
+async function playStream({ s, meta, video, addon, addonObj, queue = false }) {
   const title = episodeLabel(meta, video);
   const source = addonObj || enabledAddons().find((a) => a.manifest.name === addon) || null;
   const stremio = {
@@ -639,11 +693,17 @@ async function playStream({ s, meta, video, addon, addonObj }) {
     logo: safeHttp(meta.logo) || null, background: safeHttp(meta.background) || null, // for the loading screen
   };
   const kind = streamKind(s).k;
+  // the add-on's stream text (often lists codecs like "DDP5.1" or "x265"); lets the player guess what to expect
+  const hint = [s.name, s.title, s.description, s.behaviorHints?.filename].filter((x) => typeof x === 'string').join(' ');
   const subs = Array.isArray(s.subtitles) ? s.subtitles : [];
-  const resumeAt = typeof libraryResumeFor === 'function' ? libraryResumeFor(meta, video) : 0;
+  const resumeAt = (typeof resumeFor === 'function' ? resumeFor(meta, video) : 0) || (typeof libraryResumeFor === 'function' ? libraryResumeFor(meta, video) : 0);
+  const nx = typeof nextEpisodeOf === 'function' ? nextEpisodeOf(meta, video) : null;
+  const cw = { s, addonUrl: source ? source.transportUrl : null, ep: video ? { season: video.season, episode: video.episode ?? video.number, title: video.title || video.name } : null,
+    next: nx ? { id: nx.id, season: nx.season, episode: nx.episode ?? nx.number } : null };
+  const start = queue ? queueRemote : playRemote;
   if (kind === 'url') {
-    armUpNext({ meta, video, s, addon: source, path: s.url });
-    playRemote({ path: s.url, name: title, title, remote: { headers: s.behaviorHints?.proxyHeaders?.request || null }, stremio, subs, resumeAt });
+    if (!queue) armUpNext({ meta, video, s, addon: source, path: s.url });
+    start({ path: s.url, name: title, title, remote: { headers: s.behaviorHints?.proxyHeaders?.request || null }, stremio, subs, resumeAt, hint, cw });
   } else if (kind === 'torrent') {
     if (!S.stremio.torrentNoticeSeen) {
       if (!confirm(TORRENT_NOTICE)) return;
@@ -655,9 +715,9 @@ async function playStream({ s, meta, video, addon, addonObj }) {
     const hash = String(s.infoHash).toLowerCase();
     const idx = Number.isInteger(s.fileIdx) ? s.fileIdx : -1;
     const trackers = (s.sources || []).filter((x) => typeof x === 'string' && x.startsWith('tracker:')).map((x) => x.slice(8));
-    armUpNext({ meta, video, s, addon: source, path: `magnet:?xt=urn:btih:${hash}&idx=${idx}` });
-    playRemote({
-      path: `magnet:?xt=urn:btih:${hash}&idx=${idx}`, name: title, title, stremio, subs, resumeAt,
+    if (!queue) armUpNext({ meta, video, s, addon: source, path: `magnet:?xt=urn:btih:${hash}&idx=${idx}` });
+    start({
+      path: `magnet:?xt=urn:btih:${hash}&idx=${idx}`, name: title, title, stremio, subs, resumeAt, hint, cw,
       torrent: { infoHash: hash, fileIdx: idx, trackers, name: s.behaviorHints?.filename || meta.name },
       viaStremio: engine === 'builtin' ? null : { mustUse: engine === 'stremio' },
     });
@@ -681,6 +741,7 @@ dcBody().addEventListener('click', (e) => {
   if (open && DC.reg.get(open.dataset.open)) return go({ kind: 'detail', meta: DC.reg.get(open.dataset.open) });
   if (e.target.closest('#dc-surprise')) return surpriseMe();
   const card = e.target.closest('.dc-card[data-k]');
+  if (card && DC.reg.get(card.dataset.k)?.cwId) return resumeFromHistory(DC.reg.get(card.dataset.k).cwId); // Continue watching
   if (card) return go({ kind: 'detail', meta: DC.reg.get(card.dataset.k) });
   const sort = e.target.closest('[data-ssort]');
   if (sort) {
@@ -693,6 +754,8 @@ dcBody().addEventListener('click', (e) => {
   const sq = e.target.closest('[data-sq]');
   if (sq && DC.streamList) { DC.streamList.quality = sq.dataset.sq; return renderStreamList(); }
   if (e.target.closest('[data-sbest]')) { const b = bestStream(); if (b) playStream(DC.reg.get(b.k)); return; }
+  const add = e.target.closest('[data-add]');
+  if (add) return playStream({ ...DC.reg.get(add.dataset.add), queue: true });
   const st = e.target.closest('.dc-stream[data-k]');
   if (st) {
     // the quality you pick by hand becomes what "Play best" goes for next time
@@ -701,6 +764,23 @@ dcBody().addEventListener('click', (e) => {
     return playStream(DC.reg.get(st.dataset.k));
   }
 });
+
+// resting the mouse on a torrent stream (or focusing it with the keyboard / TV remote) warms it up
+let warmHover = null;
+function warmFrom(el) {
+  clearTimeout(warmHover);
+  const b = el && el.closest('.dc-stream.kind-torrent[data-k]');
+  if (!b) return;
+  warmHover = setTimeout(() => {
+    const it = DC.reg.get(b.dataset.k);
+    if (!it || !it.s || typeof warmTorrent !== 'function') return;
+    const trackers = (it.s.sources || []).filter((x) => typeof x === 'string' && x.startsWith('tracker:')).map((x) => x.slice(8));
+    warmTorrent(String(it.s.infoHash || '').toLowerCase(), trackers);
+  }, 500);
+}
+dcBody().addEventListener('mouseover', (e) => warmFrom(e.target));
+dcBody().addEventListener('mouseout', (e) => { if (!e.relatedTarget || !e.relatedTarget.closest('.dc-stream.kind-torrent')) clearTimeout(warmHover); });
+dcBody().addEventListener('focusin', (e) => warmFrom(e.target));
 
 // 🎲 pick something at random from the lists on the page, with a quick shuffle of posters first
 function surpriseMe() {
@@ -873,10 +953,11 @@ function showSubsMenu() {
       <button data-sqs="-10" title="Smaller (Alt −)">A−</button><button data-sqs="10" title="Bigger (Alt +)">A+</button>
       <button data-sqr title="Reset timing">Reset</button>
     </div>`;
-  const btn = $('[data-cmd="subs"]').getBoundingClientRect();
-  menu.style.left = Math.max(8, btn.left) + 'px';
-  menu.style.top = btn.bottom + 6 + 'px';
+  const watching = document.body.classList.contains('watch');
+  const btn = $(watching ? '#w-subs' : '[data-cmd="subs"]').getBoundingClientRect();
   menu.classList.remove('hidden');
+  menu.style.left = Math.max(8, Math.min(btn.left, innerWidth - menu.offsetWidth - 8)) + 'px';
+  menu.style.top = (watching ? Math.max(8, btn.top - menu.offsetHeight - 8) : btn.bottom + 6) + 'px';
   menu.querySelector('button')?.focus();
 }
 function hideSubsMenu() { $('#subs-menu').classList.add('hidden'); }
@@ -884,7 +965,7 @@ $('#subs-menu').addEventListener('click', async (e) => {
   const q = e.target.closest('[data-sqd],[data-sqs],[data-sqr]');
   if (q) {
     if (q.dataset.sqd) setSubDelay(SUBS.delay + +q.dataset.sqd);
-    else if (q.dataset.sqs) setSubSize(S.sub.size + +q.dataset.sqs);
+    else if (q.dataset.sqs) stepSubSize(Math.sign(+q.dataset.sqs));
     else setSubDelay(0);
     return;
   }
@@ -916,6 +997,16 @@ function showDiscoverNotice(text) {
 }
 
 // broken poster/logo images: drop them, or show the title instead of a missing logo
+// Title logos reveal left to right behind a soft transparent edge once the image has loaded.
+document.addEventListener('load', (e) => {
+  const img = e.target;
+  if (!(img instanceof HTMLImageElement) || !img.matches('.bn-logo, .dc-logo')) return;
+  img.classList.add('reveal');
+  // drop the mask once the wipe ends so it can't clip the logo's shadow
+  const done = () => img.classList.replace('reveal', 'shown');
+  img.addEventListener('animationend', done, { once: true });
+  setTimeout(done, 1300); // backup: the banner's own entrance animation can swallow animationend
+}, true);
 document.addEventListener('error', (e) => {
   const img = e.target;
   if (!(img instanceof HTMLImageElement) || !img.dataset.fallback) return;
@@ -924,10 +1015,35 @@ document.addEventListener('error', (e) => {
 }, true);
 
 // ------------------------------------------------------------ entry points
+// Loading screen: the logo sits greyed out while its colour fills in from the bottom.
+function showLoader(text) {
+  hideLoader(true);
+  const el = document.createElement('div');
+  el.className = 'js-loader';
+  el.id = 'js-loader';
+  el.setAttribute('role', 'status');
+  el.innerHTML = `<div class="jl-logo" aria-hidden="true"><span class="jl-base"></span><span class="jl-fill"></span></div><p>${escapeHtml(text)}</p>`;
+  $('#discover').append(el);
+  clearTimeout(DC.loaderTimer);
+  DC.loaderTimer = setTimeout(() => hideLoader(), 15000); // never hang on a slow add-on
+}
+function hideLoader(now) {
+  const el = $('#js-loader');
+  if (!el) return;
+  clearTimeout(DC.loaderTimer);
+  if (now) return el.remove();
+  el.classList.add('done');
+  setTimeout(() => el.remove(), 350);
+}
+
 async function openDiscover() {
   if (!DC.started) {
     DC.started = true;
-    dcBody().innerHTML = `<div class="dc-empty">${icon('compass')}<h2>Getting your add-ons ready…</h2></div>`;
+    // start the torrent engines now, so the first stream you pick doesn't wait for them
+    if (S.stremio.torrentEngine !== 'builtin') api.stremioServerEnsure((S.stremio.server || 'http://127.0.0.1:11470').replace(/\/+$/, '')).catch(() => {});
+    if (S.stremio.torrentEngine !== 'stremio') api.torrentWarm().catch(() => {});
+    dcBody().innerHTML = '';
+    showLoader('Getting your add-ons ready…');
     await ensureAddons();
     go({ kind: 'home' }, true);
   } else if (!DC.view) go({ kind: 'home' }, true);

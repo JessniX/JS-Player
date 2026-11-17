@@ -665,6 +665,45 @@ body.discover-mode .menu { display: none; }
 .dc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: .9rem; }
 .dc-grid .dc-card { width: auto; }
 .dc-more { display: flex; justify-content: center; margin-top: 1.2rem; }
+.dc-end-sentinel { display: block; width: 1px; height: 1px; }
+
+/* Discover loading screen: grey logo, colour fills in from the bottom with a soft edge */
+#discover { position: relative; }
+.js-loader { position: absolute; inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--spacing-4, 1rem);
+  background: var(--bg); color: var(--dim); animation: jl-in .4s ease both; transition: opacity .3s ease; }
+.js-loader.done { opacity: 0; pointer-events: none; }
+.js-loader p { margin: 0; font-size: var(--font-size-sm, .875rem); }
+.jl-logo { position: relative; width: 96px; height: 96px; }
+.jl-logo span { position: absolute; inset: 0; background: url(logo.png) center / contain no-repeat; }
+.jl-base { filter: grayscale(1) brightness(.55); opacity: .55; }
+.jl-fill { -webkit-mask-image: linear-gradient(to top, #000 40%, transparent 60%); mask-image: linear-gradient(to top, #000 40%, transparent 60%);
+  -webkit-mask-size: 100% 250%; mask-size: 100% 250%; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  animation: jl-fill 1.8s cubic-bezier(.45, 0, .25, 1) infinite; }
+@keyframes jl-fill {
+  0% { -webkit-mask-position: 0 0%; mask-position: 0 0%; opacity: 1; }
+  70% { -webkit-mask-position: 0 100%; mask-position: 0 100%; opacity: 1; }
+  90% { -webkit-mask-position: 0 100%; mask-position: 0 100%; opacity: 0; }
+  100% { -webkit-mask-position: 0 0%; mask-position: 0 0%; opacity: 0; }
+}
+@keyframes jl-in { from { opacity: 0; } }
+
+/* Title logos (banner and details): hidden until loaded, then wiped in left to right with a soft edge */
+.bn-logo, .dc-logo { opacity: 0; }
+.bn-logo.shown, .dc-logo.shown { opacity: 1; }
+.bn-logo.reveal, .dc-logo.reveal { opacity: 1;
+  -webkit-mask-image: linear-gradient(to right, #000 40%, transparent 60%); mask-image: linear-gradient(to right, #000 40%, transparent 60%);
+  -webkit-mask-size: 250% 100%; mask-size: 250% 100%; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  -webkit-mask-position: 0% 0; mask-position: 0% 0;
+  animation: logo-wipe 1.1s cubic-bezier(.3, 0, .2, 1) both; }
+@keyframes logo-wipe {
+  from { -webkit-mask-position: 100% 0; mask-position: 100% 0; opacity: .3; }
+  to { -webkit-mask-position: 0% 0; mask-position: 0% 0; opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) { .bn-logo, .dc-logo { opacity: 1; } .bn-logo.reveal, .dc-logo.reveal { animation: none; -webkit-mask-image: none; mask-image: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .js-loader { animation: none; }
+  .jl-fill { animation: none; -webkit-mask-position: 0 100%; mask-position: 0 100%; }
+}
 .dc-page-head h2 { margin: 0 0 1rem; }
 .dc-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: .6rem; min-height: 60%; color: var(--dim); }
 .dc-empty .ico { width: 3em; height: 3em; color: var(--accent); }
@@ -873,7 +912,16 @@ kbd { font: 700 .82em/1 var(--font-mono, ui-monospace, monospace); padding: .25r
 }
 .busy.cinematic .busy-logo:not([hidden]) {
   display: block; max-width: min(48%, 560px); max-height: 32%; object-fit: contain;
-  filter: drop-shadow(0 8px 30px rgba(0,0,0,.65)); animation: logoIn .7s ease both, logoBreathe 3.2s ease-in-out .7s infinite;
+  filter: drop-shadow(0 8px 30px rgba(0,0,0,.65)); animation: logoIn .7s ease both;
+}
+/* the logo (or title) is a progress bar: it sits faint and fills left to right as the video gets closer to starting.
+   --load (0..1) is set by setLoadProgress() in app.js */
+@property --load { syntax: '<number>'; inherits: true; initial-value: 0; }
+#busy { --load: 0; transition: --load .45s ease-out; }
+.busy.cinematic .busy-logo:not([hidden]), .busy.cinematic .busy-title:not([hidden]) {
+  -webkit-mask-image: linear-gradient(to right, #000 40%, rgba(0,0,0,.28) 60%); mask-image: linear-gradient(to right, #000 40%, rgba(0,0,0,.28) 60%);
+  -webkit-mask-size: 250% 100%; mask-size: 250% 100%; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  -webkit-mask-position: calc((1 - var(--load)) * 100%) 0; mask-position: calc((1 - var(--load)) * 100%) 0;
 }
 .busy.cinematic .busy-title:not([hidden]) {
   display: block; margin: 0; max-width: 80%; text-align: center; font-size: 2.6em; font-weight: 800; letter-spacing: -.01em;
@@ -887,12 +935,12 @@ kbd { font: 700 .82em/1 var(--font-mono, ui-monospace, monospace); padding: .25r
 /* buffering mid-movie: the logo over a dimmed view of the paused video */
 .busy.cinematic.light { background: radial-gradient(ellipse at center, rgba(0,0,0,.5), rgba(0,0,0,.72)); gap: .8rem; backdrop-filter: blur(2px); }
 .busy.cinematic.light .busy-backdrop, .busy.cinematic.light .busy-sub { display: none; }
-.busy.cinematic.light .busy-logo:not([hidden]) { max-width: min(36%, 380px); max-height: clamp(48px, 12vh, 110px); animation: logoIn .4s ease both, logoBreathe 3.2s ease-in-out .4s infinite; }
+.busy.cinematic.light .busy-logo:not([hidden]) { max-width: min(36%, 380px); max-height: clamp(48px, 12vh, 110px); animation: logoIn .4s ease both; }
 .busy.cinematic.light .busy-title:not([hidden]) { font-size: 1.8em; }
 @keyframes logoIn { from { opacity: 0; transform: translateY(14px) scale(.97); } to { opacity: 1; transform: none; } }
 @keyframes logoBreathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.025); } }
 @keyframes backdropDrift { from { transform: scale(1.06) translate(0, 0); } to { transform: scale(1.12) translate(-1.5%, -1%); } }
-@media (prefers-reduced-motion: reduce) { .busy.cinematic .busy-backdrop, .busy.cinematic .busy-logo, .busy.cinematic .busy-title { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .busy.cinematic .busy-backdrop, .busy.cinematic .busy-logo, .busy.cinematic .busy-title { animation: none; } #busy { transition: none; } }
 
 /* torrent peers / speed chip */
 .net-status {
@@ -943,4 +991,70 @@ button:focus-visible, summary:focus-visible, input[type=range]:focus-visible, in
   .spinner { animation: spin 1.6s linear infinite !important; }
   #backdrop, #cover, body.pulse-live #b-play { transform: none !important; }
   body.pulse-live #b-play { box-shadow: none; }
+}
+
+/* ------------------------------------------------------------ watching a stream (watch.js)
+   Stremio-style: the video fills the window; a top bar (back + title) and the controls float
+   over it on dark gradients and hide while the video plays. */
+.watch-top, .w-only { display: none; }
+body.watch .w-only { display: inline-flex; }
+body.watch #w-time { display: inline; margin-left: var(--spacing-2); color: #fff; font-variant-numeric: tabular-nums; }
+body.watch #titlebar, body.watch #sidebar, body.watch .sb-toggle { display: none; }
+body.watch #app { grid-template-rows: 0 1fr 0; }
+body.watch #stage { background: #000; }
+body.watch .watch-top {
+  display: flex; align-items: center; gap: var(--spacing-3); position: fixed; top: 0; left: 0; right: 0; z-index: 10;
+  height: 72px; padding: 0 150px 0 var(--spacing-4); /* 150px clears the window buttons */
+  background: linear-gradient(to bottom, rgba(0,0,0,.72), rgba(0,0,0,0)); color: #fff;
+  -webkit-app-region: drag; transition: opacity .3s ease;
+}
+body.watch .watch-top button { -webkit-app-region: no-drag; color: #fff; }
+#w-title { font-size: 1.15em; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body.watch #controls {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; border: 0; backdrop-filter: none; color: #fff;
+  padding: var(--spacing-10) var(--spacing-6) var(--spacing-3);
+  background: linear-gradient(to top, rgba(0,0,0,.82), rgba(0,0,0,.4) 55%, rgba(0,0,0,0));
+  transition: opacity .3s ease, transform .3s ease;
+}
+body.watch #controls .icon-btn { color: #fff; }
+body.watch #controls .icon-btn:hover { background: rgba(255,255,255,.12); }
+body.watch .seek-row .time,
+body.watch #b-prev, body.watch #b-back, body.watch #b-fwd, body.watch #b-stop,
+body.watch #b-ab, body.watch #b-viz, body.watch #b-sleep, body.watch #b-shot, body.watch #vol-val { display: none; }
+body.watch .seek-track { background: rgba(255,255,255,.22); }
+body.watch #seek-buf { background: rgba(255,255,255,.28); }
+body.watch #b-play { background: none; color: #fff; box-shadow: none; }
+body.watch .pill { background: rgba(255,255,255,.1); color: #fff; border-color: rgba(255,255,255,.2); }
+body.watch.idle #controls, body.watch.idle .watch-top { opacity: 0; pointer-events: none; }
+body.watch.idle #controls { transform: translateY(var(--spacing-2)); }
+#w-menu button { display: block; width: 100%; text-align: start; }
+@media (prefers-reduced-motion: reduce) { body.watch #controls, body.watch .watch-top { transition: none; } }
+
+/* On Windows, Chromium can hand a large video to the graphics card as its own layer, which is then
+   drawn over everything on top of it, so the player's bars vanish behind the movie. Any filter on the
+   video keeps it in the normal page; a 0.1% brightness change is invisible. */
+#media { filter: brightness(1.001); }
+
+/* stream rows: the stream itself, plus a button to add it to the playlist instead of playing it */
+.ds-row { display: flex; align-items: stretch; gap: .35rem; margin-bottom: .35rem; }
+.ds-row .dc-stream { flex: 1; margin-bottom: 0; min-width: 0; }
+.ds-add { flex: none; width: 2.6rem; height: auto; border: 1px solid var(--border); border-radius: var(--radius); background: rgba(var(--elevated-rgb), .7); }
+.ds-add:hover { border-color: var(--accent); background: rgba(var(--accent-rgb), .12); }
+
+/* subtitles (subs-overlay.js), styled exactly like Stremio's player. The font is Stremio's own file
+   (Plus Jakarta Sans 2.006, variable weight 200-800, SIL OFL 1.1: fonts/PlusJakartaSans-OFL.txt), declared the same
+   way: one upright face, so italics are slanted by the browser just as in Stremio. */
+@font-face { font-family: 'PlusJakartaSans'; src: url(fonts/PlusJakartaSans.ttf) format('truetype'); }
+#media::cue { visibility: hidden; }
+#sub-overlay { position: absolute; left: 0; right: 0; z-index: 4; pointer-events: none; text-align: center;
+  font-family: 'PlusJakartaSans', 'Arial', 'Helvetica', sans-serif; font-weight: normal;
+  /* line spacing and the thin white stroke match Stremio's desktop app as measured from a screenshot (its
+     renderer draws strokes slightly heavier than plain Chromium; the letters keep their normal width) */
+  line-height: 1.35; -webkit-font-smoothing: antialiased; }
+#sub-overlay[hidden] { display: none; }
+#sub-overlay .sub-cue {
+  display: inline-block; padding: .2em; white-space: pre-wrap; color: var(--sub-color); background-color: var(--sub-bg);
+  -webkit-text-stroke: .02em var(--sub-color);
+  text-shadow: -0.15rem -0.15rem 0.15rem #000, 0 -0.15rem 0.15rem #000, 0.15rem -0.15rem 0.15rem #000, -0.15rem 0 0.15rem #000,
+    0.15rem 0 0.15rem #000, -0.15rem 0.15rem 0.15rem #000, 0 0.15rem 0.15rem #000, 0.15rem 0.15rem 0.15rem #000;
 }

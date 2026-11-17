@@ -30,6 +30,57 @@ let port = 0;
 let opts = { uploadKBs: 500, keepData: false };
 let current = null; // { hash, torrent, file, idx }
 
+// What to fetch first (sizes from studying how Seanime streams torrents; our own code):
+// the start of the video right away, the next stretch soon after, and the end too, because
+// MP4 and MKV files often keep their seek index there. After a seek, the new spot goes first.
+const MB = 1024 * 1024;
+const HEAD_BYTES = 8 * MB, READAHEAD_BYTES = 24 * MB, TAIL_BYTES = 4 * MB, SEEK_BYTES = 8 * MB;
+
+// piece indexes covering bytes [from, to] of a file
+function pieceSpan(file, from, to) {
+  const pl = current.torrent.pieceLength;
+  const a = Math.max(0, Math.min(from, file.length - 1)), b = Math.max(a, Math.min(to, file.length - 1));
+  return [Math.floor((file.offset + a) / pl), Math.floor((file.offset + b) / pl)];
+}
+function prioritize(file) {
+  const t = current.torrent;
+  t.critical(...pieceSpan(file, 0, HEAD_BYTES - 1));
+  t.critical(...pieceSpan(file, file.length - TAIL_BYTES, file.length - 1));
+  t.select(...pieceSpan(file, HEAD_BYTES, HEAD_BYTES + READAHEAD_BYTES - 1), 1);
+}
+// a read that doesn't start at the beginning is a seek (or the player checking the end): fetch that spot first
+function prioritizeFrom(file, start) {
+  if (!current || current.file !== file || start <= 0) return;
+  current.torrent.critical(...pieceSpan(file, start, start + SEEK_BYTES - 1));
+}
+
+// The player only gets the video once its first pieces are really here (one piece if pieces are
+// 2 MB or more, otherwise two), so it doesn't start on nothing and stall. Gives up waiting after
+// `ms` and lets the player try anyway.
+function headPieces(file) {
+  const pl = current.torrent.pieceLength;
+  const [a, b] = pieceSpan(file, 0, file.length - 1);
+  return [a, Math.min(b, a + (pl >= 2 * MB ? 0 : 1))];
+}
+function headProgress(file) {
+  const t = current.torrent;
+  const [a, b] = headPieces(file);
+  let have = 0;
+  for (let i = a; i <= b; i++) if (t.bitfield && t.bitfield.get(i)) have++;
+  return have / (b - a + 1);
+}
+function waitForHead(file, ms) {
+  const t = current.torrent;
+  return new Promise((resolve) => {
+    if (headProgress(file) >= 1) return resolve();
+    const timer = setTimeout(done, ms);
+    const tick = setInterval(check, 250); // in case a 'verified' event is missed
+    function check() { if (!current || current.file !== file || headProgress(file) >= 1) done(); }
+    function done() { clearTimeout(timer); clearInterval(tick); t.removeListener('verified', check); resolve(); }
+    t.on('verified', check);
+  });
+}
+
 const cachePath = () => path.join(app.getPath('userData'), 'torrent-cache');
 const cacheDir = () => { const d = cachePath(); fs.mkdirSync(d, { recursive: true }); return d; };
 
@@ -69,6 +120,7 @@ function ensureServer() {
       const file = m && findFile(m[1].toLowerCase(), +m[2]);
       if (!file) { res.writeHead(404); return res.end(); }
       const r = rangeStream(file, req.headers.range);
+      if (r.status === 206) prioritizeFrom(file, r.start);
       res.writeHead(r.status, { 'Content-Type': typeOf(file), 'Accept-Ranges': 'bytes', ...r.headers });
       if (r.status === 416 || req.method === 'HEAD') return res.end();
       const s = file.createReadStream({ start: r.start, end: r.end });
@@ -86,6 +138,7 @@ function torrentResponse(req, url) {
   const file = m && findFile(m[1].toLowerCase(), +m[2]);
   if (!file) return new Response('Not found', { status: 404 });
   const r = rangeStream(file, req.headers.get('range'));
+  if (r.status === 206) prioritizeFrom(file, r.start);
   const headers = { 'Content-Type': typeOf(file), 'Accept-Ranges': 'bytes', ...r.headers };
   if (r.status === 416) return new Response(null, { status: 416, headers });
   const s = file.createReadStream({ start: r.start, end: r.end });
@@ -123,7 +176,7 @@ async function start({ infoHash, fileIdx, trackers = [], name }) {
     const announce = [...new Set([...trackers.filter((t) => /^(udp|https?|wss?):\/\//.test(t)), ...TRACKERS])];
     torrent = c.add(`magnet:?xt=urn:btih:${hash}${name ? '&dn=' + encodeURIComponent(name) : ''}`, { path: cacheDir(), announce, destroyStoreOnDestroy: !opts.keepData });
   }
-  current = { hash, torrent, file: null, idx: -1 };
+  current = { hash, torrent, file: null, idx: -1, stage: 'metadata' };
   await waitForMetadata(torrent, 45000);
   if (!current || current.hash !== hash) throw new Error('Cancelled');
   const files = torrent.files;
@@ -138,6 +191,11 @@ async function start({ infoHash, fileIdx, trackers = [], name }) {
   file.select();
   current.file = file;
   current.idx = idx;
+  prioritize(file);
+  current.stage = 'head';
+  await waitForHead(file, 90000);
+  if (!current || current.hash !== hash) throw new Error('Cancelled');
+  current.stage = 'ready';
   return {
     hash, idx, name: file.name, size: file.length,
     playerUrl: `prism://app/torrent/${hash}/${idx}`,
@@ -154,6 +212,7 @@ function status() {
   return {
     hash: current.hash, peers: t.numPeers || 0, down: Math.round(t.downloadSpeed || 0), up: Math.round(t.uploadSpeed || 0),
     progress: f ? f.progress : t.progress || 0, ready: !!f, name: f ? f.name : t.name || '',
+    stage: current.stage, head: f ? headProgress(f) : 0, // head: how much of the first pieces is here (0..1)
   };
 }
 
@@ -164,6 +223,8 @@ function setupTorrents() {
     try { return await start(args || {}); } catch (e) { return { error: String(e && e.message || e) }; }
   });
   ipcMain.handle('torrent-status', () => status());
+  // load the engine and its local server ahead of time, so the first click doesn't wait for them
+  ipcMain.handle('torrent-warm', async () => { await getClient(); await ensureServer(); return true; });
   ipcMain.handle('torrent-stop', () => { stopCurrent(); return true; });
   ipcMain.handle('torrent-options', (_e, o) => {
     opts = { ...opts, ...(o || {}) };
