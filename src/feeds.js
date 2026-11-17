@@ -1,15 +1,35 @@
 // Feeds: scroll your social feeds inside JS Player.
 // Each site runs in its own sandboxed <webview>, all sharing one saved session (see feeds-main.js).
 
-const FEEDS = [
+const BUILTIN_FEEDS = [
   { id: 'youtube', name: 'YouTube Shorts', glyph: '▶', color: '#ff0033', desc: 'Short vertical videos from YouTube.', home: 'https://www.youtube.com/shorts', login: 'https://accounts.google.com/ServiceLogin?service=youtube&continue=https%3A%2F%2Fwww.youtube.com%2Fshorts', auto: true },
   { id: 'tiktok', name: 'TikTok', glyph: '♪', color: '#111111', ring: '#25f4ee', desc: 'Your For You page.', home: 'https://www.tiktok.com/foryou', login: 'https://www.tiktok.com/login', auto: true },
   { id: 'instagram', name: 'Instagram Reels', glyph: 'IG', color: '#d62976', desc: 'Reels from Instagram.', home: 'https://www.instagram.com/reels/', login: 'https://www.instagram.com/accounts/login/', auto: true },
   { id: 'facebook', name: 'Facebook Reels', glyph: 'f', color: '#1877f2', desc: 'Reels from Facebook.', home: 'https://www.facebook.com/reel/', login: 'https://www.facebook.com/login/', auto: true },
   { id: 'x', name: 'X', glyph: 'X', color: '#2a2a2a', desc: 'Your timeline.', home: 'https://x.com/home', login: 'https://x.com/i/flow/login', auto: false },
   { id: 'reddit', name: 'Reddit', glyph: 'r/', color: '#ff4500', desc: 'Your home feed.', home: 'https://www.reddit.com/', login: 'https://www.reddit.com/login/', auto: false },
-];
-const feedById = (id) => FEEDS.find((f) => f.id === id);
+].map((f) => ({ ...f, builtin: true }));
+
+// Your own sites live in S.feeds.custom; S.feeds.order and S.feeds.hidden control the list.
+const hostOf = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return u; } };
+const safeColor = (c) => (/^#[0-9a-f]{6}$/i.test(c || '') ? c : '#7c4dff');
+function allFeeds() {
+  const custom = (S.feeds.custom || []).map((c) => ({
+    ...c, custom: true, color: safeColor(c.color), login: c.home, auto: !!c.auto, desc: c.desc || hostOf(c.home),
+  }));
+  const order = S.feeds.order || [];
+  const rank = (id) => { const i = order.indexOf(id); return i < 0 ? 1000 : i; };
+  return [...BUILTIN_FEEDS, ...custom].map((f, i) => ({ f, i })).sort((a, b) => rank(a.f.id) - rank(b.f.id) || a.i - b.i).map((x) => x.f);
+}
+const isHidden = (id) => (S.feeds.hidden || []).includes(id);
+const visibleFeeds = () => allFeeds().filter((f) => !isHidden(f.id));
+const feedById = (id) => allFeeds().find((f) => f.id === id);
+// Icon HTML: your image, the built-in logo, or the emoji/text you typed.
+function feedIcon(f) {
+  if (f.icon && /^data:image\//.test(f.icon)) return `<img class="feed-img" src="${escapeHtml(f.icon)}" alt="">`;
+  return brandIcon(f.id) || `<span class="feed-glyph">${escapeHtml(f.glyph || (f.name || '?').slice(0, 1).toUpperCase())}</span>`;
+}
+const accentOf = (f) => (f.color === '#111111' || f.color === '#2a2a2a' ? (f.ring || '#888') : f.color);
 
 const FD = { mode: 'player', current: null, views: new Map(), status: {}, onHome: true };
 
@@ -99,13 +119,26 @@ const PAUSE_JS = `document.querySelectorAll('video,audio').forEach(v => { if (!v
 const RESUME_JS = `(() => { const v = [...document.querySelectorAll('video,audio')].find(x => x.dataset.prismPaused); document.querySelectorAll('[data-prism-paused]').forEach(x => delete x.dataset.prismPaused); if (v) v.play().catch(() => {}); return 1; })()`;
 
 // ------------------------------------------------------------ mode switch
+// Modes: 'player' (your files), 'feeds' (websites), 'discover' (Stremio add-ons)
 function setMode(mode) {
+  if (!['player', 'feeds', 'discover'].includes(mode)) mode = 'player';
   if (mode === FD.mode) return;
+  // leaving the player while a stream is still loading cancels it (it would otherwise carry on unseen)
+  if (FD.mode === 'player' && current?.remote && typeof busyShown === 'function' && busyShown()) {
+    leaveStream();
+    if (FD.mode === mode) return;
+  }
   FD.mode = mode;
   S.mode = mode;
   document.body.classList.toggle('feeds-mode', mode === 'feeds');
+  document.body.classList.toggle('discover-mode', mode === 'discover');
   $('#feeds').classList.toggle('hidden', mode !== 'feeds');
+  $('#discover').classList.toggle('hidden', mode !== 'discover');
   $$('.mode-switch button').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
+  if (mode === 'discover') {
+    if (fs) toggleFullscreen(false);
+    openDiscover();
+  }
   if (mode === 'feeds') {
     if (!video.paused) video.pause();
     if (IV.slideshow) toggleSlideshow(false, true);
@@ -123,26 +156,32 @@ $$('.mode-switch button').forEach((b) => b.addEventListener('click', () => setMo
 // ------------------------------------------------------------ rendering
 function renderFeedRail() {
   const rail = $('#feed-rail');
-  rail.innerHTML = `<button class="rail-btn home ${FD.onHome ? 'active' : ''}" data-home title="All feeds">${icon('grid')}</button><span class="rail-sep"></span>` +
-    FEEDS.map((f) => `<button class="rail-btn ${!FD.onHome && FD.current === f.id ? 'active' : ''}" data-feed="${f.id}" title="${f.name}" style="--c:${f.color};${f.ring ? `box-shadow: inset 0 0 0 2px ${f.ring}` : ''}">${brandIcon(f.id) || f.glyph}${FD.status[f.id] ? '<span class="on-dot" title="Signed in"></span>' : ''}</button>`).join('');
+  rail.innerHTML = `<button class="rail-btn home ${FD.onHome ? 'active' : ''}" data-home title="All feeds" aria-label="All feeds">${icon('grid')}</button><span class="rail-sep"></span>` +
+    visibleFeeds().map((f) => `<button class="rail-btn ${!FD.onHome && FD.current === f.id ? 'active' : ''} ${f.icon ? 'has-img' : ''}" data-feed="${f.id}" title="${escapeHtml(f.name)}" aria-label="${escapeHtml(f.name)}" style="--c:${f.color};${f.ring ? `box-shadow: inset 0 0 0 2px ${f.ring}` : ''}">${feedIcon(f)}${FD.status[f.id] ? '<span class="on-dot" title="Signed in"></span>' : ''}</button>`).join('') +
+    `<button class="rail-btn add" data-add title="Add or customize feeds" aria-label="Add or customize feeds">${icon('plus')}</button>`;
 }
 function renderFeedCards() {
-  $('#feed-cards').innerHTML = FEEDS.map((f) => {
+  $('#feed-cards').innerHTML = visibleFeeds().map((f) => {
     const on = !!FD.status[f.id];
-    return `<div class="feed-card" style="--c:${f.color === '#111111' || f.color === '#2a2a2a' ? (f.ring || '#888') : f.color}">
-      <div class="fc-top"><div class="fc-icon" style="background:${f.color}">${brandIcon(f.id) || f.glyph}</div>
-        <div><h3>${f.name}</h3><span class="fc-status ${on ? 'on' : ''}">${on ? icon('check') + ' Signed in' : 'Not signed in'}</span></div></div>
-      <p class="fc-desc">${f.desc}${f.auto ? '' : ' (Auto next isn\'t available here.)'}</p>
+    const status = f.custom ? escapeHtml(hostOf(f.home)) : on ? icon('check') + ' Signed in' : 'Not signed in';
+    const second = f.custom
+      ? `<button class="btn" data-edit="${f.id}">Edit</button>`
+      : `<button class="btn" data-${on ? 'signout' : 'signin'}="${f.id}">${on ? 'Sign out' : 'Sign in'}</button>`;
+    return `<div class="feed-card" style="--c:${accentOf(f)}">
+      <div class="fc-top"><div class="fc-icon ${f.icon ? 'has-img' : ''}" style="background:${f.color}">${feedIcon(f)}</div>
+        <div><h3>${escapeHtml(f.name)}</h3><span class="fc-status ${on && !f.custom ? 'on' : ''}">${status}</span></div></div>
+      <p class="fc-desc">${escapeHtml(f.desc)}${f.auto ? '' : ' (Auto next isn\'t available here.)'}</p>
       <div class="fc-actions">
         <button class="btn" data-open="${f.id}">Open</button>
-        <button class="btn" data-${on ? 'signout' : 'signin'}="${f.id}">${on ? 'Sign out' : 'Sign in'}</button>
+        ${second}
       </div></div>`;
-  }).join('');
+  }).join('') + `<button class="feed-card add-card" data-cmd="customize-feeds"><span class="add-plus">${icon('plus')}</span><h3>Add a website</h3><p class="fc-desc">Any site you like, with your own icon.</p></button>`;
 }
 $('#feed-rail').addEventListener('click', (e) => {
   const b = e.target.closest('button');
   if (!b) return;
   if (b.hasAttribute('data-home')) showFeedHome();
+  else if (b.hasAttribute('data-add')) openFeedsDialog();
   else openFeed(b.dataset.feed);
 });
 $('#feed-cards').addEventListener('click', (e) => {
@@ -151,6 +190,7 @@ $('#feed-cards').addEventListener('click', (e) => {
   if (b.dataset.open) openFeed(b.dataset.open);
   else if (b.dataset.signin) openFeed(b.dataset.signin, feedById(b.dataset.signin).login);
   else if (b.dataset.signout) signOutFeed(b.dataset.signout);
+  else if (b.dataset.edit) openFeedsDialog(b.dataset.edit);
 });
 
 let statusTimer;
@@ -254,13 +294,13 @@ function updateFeedBar() {
   if (!f) return;
   const wv = FD.views.get(f.id);
   const on = !!FD.status[f.id];
-  $('#feed-view').style.setProperty('--c', f.color === '#111111' ? f.ring : f.color);
+  $('#feed-view').style.setProperty('--c', accentOf(f));
   $('#fb-name').textContent = f.name;
   const st = $('#fb-status');
-  st.textContent = on ? '· Signed in' : '· Not signed in';
-  st.classList.toggle('on', on);
-  $('#fb-sign').textContent = on ? 'Sign out' : 'Sign in';
-  $('#fb-sign').classList.toggle('primary', !on);
+  st.textContent = f.custom ? '· ' + hostOf(f.home) : on ? '· Signed in' : '· Not signed in';
+  st.classList.toggle('on', on && !f.custom);
+  $('#fb-sign').textContent = f.custom ? 'Clear sign-in' : on ? 'Sign out' : 'Sign in';
+  $('#fb-sign').classList.toggle('primary', !on && !f.custom);
   let back = false, fwd = false;
   try { back = wv.canGoBack(); fwd = wv.canGoForward(); } catch { /* not ready */ }
   $('#fb-back').disabled = !back;
@@ -303,19 +343,36 @@ $('#feed-retry').onclick = () => { $('#feed-error').classList.add('hidden'); con
 $('#fb-sign').onclick = () => {
   const f = feedById(FD.current);
   if (!f) return;
-  if (FD.status[f.id]) signOutFeed(f.id);
+  if (f.custom || FD.status[f.id]) signOutFeed(f.id);
   else curView()?.loadURL(f.login);
 };
 
 async function signOutFeed(id) {
   const f = feedById(id);
+  if (!f) return;
   const extra = id === 'youtube' ? ' This also signs you out of Google inside JS Player.' : '';
-  if (!confirm(`Sign out of ${f.name} in JS Player?${extra}`)) return;
-  await api.feedsSignOut(id);
+  if (f.custom) {
+    if (!confirm(`Clear your sign-in and saved data for ${hostOf(f.home)} in JS Player?`)) return;
+    await api.feedsClearSite(f.home);
+  } else {
+    if (!confirm(`Sign out of ${f.name} in JS Player?${extra}`)) return;
+    await api.feedsSignOut(id);
+  }
   await refreshFeedStatus();
   const wv = FD.views.get(id);
   if (wv) { try { wv.loadURL(f.home); } catch {} }
-  osd(`Signed out of ${f.name}`);
+  osd(f.custom ? `Cleared ${hostOf(f.home)}` : `Signed out of ${f.name}`);
+}
+
+// Drop a site's open page (used when a custom site is removed or its address changes).
+function closeFeedView(id) {
+  const wv = FD.views.get(id);
+  if (!wv) return;
+  const bar = wv.nextElementSibling;
+  if (bar && bar.classList.contains('feed-progress')) bar.remove();
+  wv.remove();
+  FD.views.delete(id);
+  if (FD.current === id) { FD.current = null; if (FD.mode === 'feeds') showFeedHome(); }
 }
 
 // ------------------------------------------------------------ speed & quality options
@@ -334,7 +391,7 @@ let feedFull = false;
 function toggleFeedFull(force) {
   feedFull = force ?? !feedFull;
   document.body.classList.toggle('feed-full', feedFull);
-  api.windowCmd('fullscreen', feedFull);
+  api.windowCmd('fullscreen', feedFull || (typeof TV !== 'undefined' && TV.on));
   if (feedFull) osd('Press Esc or the button at the top to leave full screen', 2200);
   curView()?.focus();
 }

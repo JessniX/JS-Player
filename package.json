@@ -1,13 +1,13 @@
 {
   "name": "js-player",
   "productName": "JS Player",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A customizable media player with live audio visualizers, themes, an equalizer and ffmpeg fallback for any file type.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "smoke": "electron . --smoke",
-    "dist": "electron-builder --win"
+    "dist": "electron-builder --win --publish never"
   },
   "license": "MIT",
   "devDependencies": {
@@ -23,6 +23,10 @@
     "files": [
       "main.js",
       "feeds-main.js",
+      "updater-main.js",
+      "stremio-main.js",
+      "torrent-main.js",
+      "live-main.js",
       "preload.js",
       "src/**/*"
     ],
@@ -40,7 +44,14 @@
       "createStartMenuShortcut": true,
       "artifactName": "JS-Player-Setup-${version}.${ext}"
     },
-    "publish": null,
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "JessniX",
+        "repo": "JS-Player",
+        "releaseType": "release"
+      }
+    ],
     "fileAssociations": [
       {
         "ext": [
@@ -96,5 +107,9 @@
         "role": "Viewer"
       }
     ]
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.11",
+    "webtorrent": "^3.0.21"
   }
 }

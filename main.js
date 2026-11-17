@@ -10,6 +10,10 @@ const crypto = require('crypto');
 const { spawn } = require('child_process');
 const { Readable } = require('stream');
 const { setupFeeds } = require('./feeds-main');
+const { setupUpdater } = require('./updater-main');
+const { setupStremio, remoteResponse } = require('./stremio-main');
+const { setupTorrents, torrentResponse } = require('./torrent-main');
+const { setupLive, liveResponse, stopAllLive } = require('./live-main');
 
 const SMOKE = process.argv.includes('--smoke');
 if (SMOKE) app.setPath('userData', path.join(app.getPath('temp'), 'prism-player-smoke'));
@@ -149,6 +153,9 @@ function registerProtocol() {
       const p = url.searchParams.get('p');
       return p ? serveFile(p, req) : new Response('Bad request', { status: 400 });
     }
+    if (url.pathname === '/remote') return remoteResponse(req, url);
+    if (url.pathname.startsWith('/torrent/')) return torrentResponse(req, url);
+    if (url.pathname === '/live') return liveResponse(req, url);
     let rel = decodeURIComponent(url.pathname);
     if (rel === '/' || rel === '') rel = '/index.html';
     const full = path.normalize(path.join(UI_DIR, rel));
@@ -438,7 +445,7 @@ ipcMain.handle('open-subtitle', async () => {
   return r.canceled ? null : r.filePaths[0];
 });
 ipcMain.handle('pick-image', async () => {
-  const r = await dialog.showOpenDialog(win, { properties: ['openFile'], filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif'] }] });
+  const r = await dialog.showOpenDialog(win, { properties: ['openFile'], filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg', 'ico'] }] });
   return r.canceled ? null : r.filePaths[0];
 });
 ipcMain.handle('read-text', async (_e, p) => {
@@ -502,6 +509,7 @@ ipcMain.on('window', (_e, cmd, arg) => {
   if (!win) return;
   if (cmd === 'always-on-top') win.setAlwaysOnTop(!!arg);
   if (cmd === 'fullscreen') win.setFullScreen(!!arg);
+  if (cmd === 'zoom') win.webContents.setZoomFactor(Math.min(3, Math.max(0.5, +arg || 1))); // TV mode
   if (cmd === 'titlebar' && process.platform !== 'darwin') {
     try { win.setTitleBarOverlay({ color: '#00000000', symbolColor: arg.symbol, height: 38 }); } catch {}
   }
@@ -528,6 +536,11 @@ if (!SMOKE && !app.requestSingleInstanceLock()) {
     launchFiles = await expandPaths(filesFromArgv(process.argv));
     registerProtocol();
     setupFeeds(() => win);
+    setupStremio();
+    setupTorrents();
+    setupLive({ ffmpegPath, parseProbe });
+    app.on('will-quit', stopAllLive);
+    setupUpdater({ getWin: () => win, isAutoEnabled: () => (loadSettings().updates || {}).auto !== false });
     createWindow();
   });
 

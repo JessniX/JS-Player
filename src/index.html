@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' prism: blob: data:; style-src 'self' 'unsafe-inline' prism:; img-src 'self' prism: blob: data:; media-src prism: blob:; font-src 'self' prism: data:; frame-src https:">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' prism: blob: data:; style-src 'self' 'unsafe-inline' prism:; img-src 'self' prism: blob: data: https: http:; media-src prism: blob:; font-src 'self' prism: data:; frame-src https:">
   <title>JS Player</title>
   <link rel="stylesheet" href="astryx-tokens.css">
   <link rel="stylesheet" href="styles.css">
@@ -10,6 +10,11 @@
 </head>
 <body>
   <div id="backdrop"></div>
+  <div id="update-toast" class="update-toast hidden" role="status">
+    <div class="ut-text"><b id="ut-title">Update ready</b><span id="ut-sub">Restart JS Player to finish updating.</span></div>
+    <button class="btn small primary" id="ut-restart">Restart now</button>
+    <button class="btn small" id="ut-later">Later</button>
+  </div>
   <div id="app">
     <!-- Title bar -->
     <header id="titlebar">
@@ -17,6 +22,7 @@
       <div class="mode-switch" role="tablist">
         <button data-mode="player" class="active" title="Your videos, music and photos"><i data-icon="play"></i><span>Player</span></button>
         <button data-mode="feeds" title="Scroll your social feeds"><i data-icon="feeds"></i><span>Feeds</span></button>
+        <button data-mode="discover" title="Movies and series from your Stremio add-ons"><i data-icon="compass"></i><span>Discover</span></button>
       </div>
       <nav class="menu">
         <button data-cmd="open" title="Open files (Ctrl+O)"><i data-icon="file"></i><span>Open</span></button>
@@ -25,6 +31,7 @@
       </nav>
       <div id="now-title" class="now-title"></div>
       <div class="tb-right">
+        <button data-cmd="tv-mode" class="tv-btn" title="TV mode: big screen, remote and gamepad friendly"><i data-icon="tv"></i><span>TV</span></button>
         <button data-cmd="toggle-sidebar" title="Toggle panel (Tab)"><i data-icon="sidebar"></i></button>
       </div>
     </header>
@@ -68,14 +75,21 @@
           </div>
         </div>
         <div id="busy" class="busy hidden">
+          <div class="busy-backdrop" id="busy-backdrop"></div>
+          <img class="busy-logo" id="busy-logo" alt="" hidden>
+          <h2 class="busy-title" id="busy-title"></h2>
+          <p class="busy-sub" id="busy-sub"></p>
           <div class="spinner"></div>
           <div id="busy-text">Converting…</div>
           <div class="busy-bar"><div id="busy-fill"></div></div>
           <button class="btn small" id="busy-cancel">Cancel</button>
         </div>
         <div id="osd" class="osd"></div>
+        <div id="net-status" class="net-status hidden" aria-live="polite"></div>
         <div id="drop-hint" class="drop-hint hidden">Drop to play</div>
       </section>
+
+      <button class="sb-toggle" id="sb-toggle" title="Hide the side panel (Tab)" aria-label="Hide the side panel" aria-expanded="true"><i data-icon="chevR"></i></button>
 
       <!-- Side panel -->
       <aside id="sidebar">
@@ -207,12 +221,64 @@
           <label class="check"><input type="checkbox" id="s-upscale"> Enlarge small images to fit the window</label>
           <label class="check"><input type="checkbox" id="s-strip"> Show filmstrip</label>
           <h3>Window</h3>
+          <label class="check"><input type="checkbox" id="s-tv"> TV mode: big screen, works with a TV remote or gamepad</label>
+          <div class="row gap"><button class="btn small" data-cmd="shortcuts"><i data-icon="grid"></i> Keyboard shortcuts…</button></div>
           <label class="check"><input type="checkbox" id="s-ontop"> Always on top</label>
           <label class="check"><input type="checkbox" id="s-autohide"> Hide controls while watching</label>
           <h3>Subtitles</h3>
           <div class="field"><label>Size <span id="sub-size-val" class="dim"></span></label><input type="range" id="s-subsize" min="60" max="220" step="5"></div>
           <div class="row gap"><label class="color-field">Text <input type="color" id="s-subcolor"></label><label class="color-field">Background <input type="color" id="s-subbg"></label></div>
           <div class="field"><label>Background opacity <span id="sub-bga-val" class="dim"></span></label><input type="range" id="s-subbga" min="0" max="1" step="0.05"></div>
+          <h3>Feeds</h3>
+          <p class="dim small">Add your own websites with custom icons, hide the ones you don't use, and change their order.</p>
+          <button class="btn small" data-cmd="customize-feeds"><i data-icon="sliders"></i> Customize Feeds…</button>
+          <h3>Discover (Stremio add-ons)</h3>
+          <div class="row gap"><button class="btn small" data-cmd="manage-addons"><i data-icon="puzzle"></i> Manage add-ons…</button></div>
+          <label class="check"><input type="checkbox" id="s-autonext"> Play the next episode automatically (Up next)</label>
+          <div class="field"><label>Subtitle language</label>
+            <select id="s-sublang" class="input">
+              <option value="">Off</option>
+              <option value="eng">English</option><option value="spa">Spanish</option><option value="fre">French</option>
+              <option value="ger">German</option><option value="ita">Italian</option><option value="por">Portuguese</option>
+              <option value="pob">Portuguese (Brazil)</option><option value="dut">Dutch</option><option value="pol">Polish</option>
+              <option value="rus">Russian</option><option value="ukr">Ukrainian</option><option value="tur">Turkish</option>
+              <option value="ara">Arabic</option><option value="heb">Hebrew</option><option value="per">Persian</option>
+              <option value="hin">Hindi</option><option value="jpn">Japanese</option><option value="kor">Korean</option>
+              <option value="chi">Chinese</option><option value="gre">Greek</option><option value="swe">Swedish</option>
+              <option value="nor">Norwegian</option><option value="dan">Danish</option><option value="fin">Finnish</option>
+              <option value="rum">Romanian</option><option value="hun">Hungarian</option><option value="cze">Czech</option>
+            </select>
+          </div>
+          <div class="field"><label>Torrent streams</label>
+            <select id="s-engine" class="input">
+              <option value="auto">Automatic (Stremio's engine if installed)</option>
+              <option value="stremio">Always Stremio's engine</option>
+              <option value="builtin">Always built-in (WebTorrent)</option>
+            </select>
+          </div>
+          <p id="engine-note" class="dim small"></p>
+          <div id="builtin-opts">
+            <div class="field"><label>Upload speed while streaming</label>
+              <select id="s-upload" class="input">
+                <option value="0">No limit</option><option value="2048">2 MB/s</option><option value="500">500 KB/s</option><option value="100">100 KB/s</option>
+              </select>
+            </div>
+            <label class="check"><input type="checkbox" id="s-keepdata"> Keep downloaded torrent data after watching</label>
+            <p class="dim small">Torrents download from other people and share pieces back while you watch, so your IP address is visible to them. Only watch what you have the right to.</p>
+          </div>
+          <div id="stremio-srv-opts" class="field"><label>Stremio streaming server <span id="srv-status" class="dim"></span></label>
+            <input id="s-server" class="input" spellcheck="false" placeholder="http://127.0.0.1:11470">
+          </div>
+          <h3>Stremio account</h3>
+          <div id="acct" class="acct"></div>
+          <h3>Updates</h3>
+          <p class="small">JS Player <b id="upd-version"></b> · <span id="upd-status" class="dim">…</span></p>
+          <div class="upd-bar hidden" id="upd-bar"><div id="upd-fill"></div></div>
+          <label class="check"><input type="checkbox" id="s-autoupdate"> Download updates automatically</label>
+          <div class="row gap">
+            <button class="btn small" id="upd-check">Check for updates</button>
+            <button class="btn small primary hidden" id="upd-install">Restart &amp; update</button>
+          </div>
           <h3>Conversion cache</h3>
           <p class="dim small" id="ffmpeg-status">Checking ffmpeg…</p>
           <div class="row gap"><button class="btn small" id="s-cache-open">Open folder</button><button class="btn small" id="s-cache-clear">Clear cache</button></div>
@@ -228,8 +294,11 @@
       <div class="feed-body">
         <div class="feed-home" id="feed-home">
           <div class="feed-hero">
-            <h1>Your feeds</h1>
-            <p>Pick a feed to start scrolling. Sign in once, and JS Player remembers you.</p>
+            <div class="row gap feed-hero-row">
+              <h1>Your feeds</h1>
+              <button class="btn small" data-cmd="customize-feeds"><i data-icon="sliders"></i> Customize</button>
+            </div>
+            <p>Pick a feed to start scrolling. Sign in once, and JS Player remembers you. Add any website you like with <b>Customize</b>.</p>
           </div>
           <div class="feed-cards" id="feed-cards"></div>
           <div class="feed-card wide auto-card">
@@ -284,6 +353,17 @@
       </div>
     </section>
 
+    <!-- Discover: Stremio add-ons -->
+    <section id="discover" class="hidden">
+      <div class="dc-bar">
+        <button class="icon-btn" id="dc-back" title="Back"><i data-icon="arrowL"></i></button>
+        <div class="dc-types" id="dc-types" role="tablist"></div>
+        <label class="dc-search"><i data-icon="search"></i><input id="dc-q" type="search" placeholder="Search movies and series…" spellcheck="false"></label>
+        <button class="btn small" data-cmd="manage-addons"><i data-icon="puzzle"></i> Add-ons</button>
+      </div>
+      <div class="dc-body" id="dc-body"></div>
+    </section>
+
     <!-- Controls -->
     <footer id="controls">
       <div class="seek-row">
@@ -311,6 +391,7 @@
           <button class="pill" id="b-viz" title="Cycle visualizer (V)">Bars</button>
         </div>
         <div class="ctl-right">
+          <button class="icon-btn sleep-btn" id="b-sleep" title="Sleep timer (Z)" aria-label="Sleep timer"><i data-icon="moon"></i><span class="sleep-left"></span></button>
           <button class="icon-btn" id="b-shot" title="Screenshot (S)"><i data-icon="camera"></i></button>
           <button class="icon-btn" id="b-pip" title="Picture in picture"><i data-icon="pip"></i></button>
           <button class="icon-btn" id="b-mute" title="Mute (M)"><i data-icon="vol"></i></button>
@@ -328,7 +409,52 @@
   <script src="app.js"></script>
   <script src="imageviewer.js"></script>
   <script src="brand-icons.js"></script>
+  <!-- Customize Feeds -->
+  <dialog id="feeds-dialog" class="dlg">
+    <div class="dlg-head"><h2>Customize Feeds</h2><button class="icon-btn" data-close title="Close"><i data-icon="x"></i></button></div>
+    <p class="dim">Show, hide and reorder your feeds, or add any website with your own icon.</p>
+    <ul id="fc-list" class="fc-list"></ul>
+    <h3 id="fc-form-title">Add a website</h3>
+    <form id="fc-form" class="fc-form" autocomplete="off">
+      <div class="fc-preview"><div class="fc-icon" id="fc-prev-icon"></div><span class="dim small">Preview</span></div>
+      <div class="fc-fields">
+        <label class="field">Name<input class="input" id="fc-name" maxlength="40" placeholder="My site"></label>
+        <label class="field">Web address<input class="input" id="fc-url" placeholder="https://example.com" spellcheck="false"></label>
+        <div class="row gap wrap fc-icon-row">
+          <span class="dim small">Icon</span>
+          <button type="button" class="btn small" id="fc-icon-site"><i data-icon="globe"></i> Get from site</button>
+          <button type="button" class="btn small" id="fc-icon-file"><i data-icon="image"></i> Choose image…</button>
+          <input class="input fc-glyph" id="fc-glyph" maxlength="4" placeholder="Emoji / text">
+          <label class="color-field">Color <input type="color" id="fc-color" value="#7c4dff"></label>
+        </div>
+        <label class="check"><input type="checkbox" id="fc-auto"> It's a video feed (allow Auto next)</label>
+        <div class="row gap"><button class="btn primary" id="fc-save" type="submit">Add site</button><button type="button" class="btn" id="fc-cancel" hidden>Cancel editing</button><span id="fc-msg" class="small"></span></div>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Stremio add-ons -->
+  <dialog id="addons-dialog" class="dlg wide">
+    <div class="dlg-head"><h2>Add-ons</h2><button class="icon-btn" data-close title="Close"><i data-icon="x"></i></button></div>
+    <p class="dim">Discover works with <b>Stremio add-ons</b>. They decide which catalogs, details, streams and subtitles you see. JS Player doesn't come with any streams, so install only add-ons you trust and that are legal where you live.</p>
+    <form id="ad-form" class="ad-form" autocomplete="off">
+      <input class="input" id="ad-url" placeholder="Paste an add-on link (https://…/manifest.json or stremio://…)" spellcheck="false">
+      <button class="btn primary" type="submit" id="ad-check">Install</button>
+    </form>
+    <div id="ad-msg" class="small"></div>
+    <ul id="ad-list" class="ad-list"></ul>
+  </dialog>
+
+  <div id="subs-menu" class="pop hidden" role="menu"></div>
+
   <script src="feeds.js"></script>
+  <script src="feeds-custom.js"></script>
+  <script src="updates.js"></script>
+  <script src="discover.js"></script>
+  <script src="upnext.js"></script>
+  <script src="sleep.js"></script>
+  <script src="stremio-sync.js"></script>
+  <script src="tv.js"></script>
   <script src="ambience.js"></script>
 </body>
 </html>

@@ -34,7 +34,15 @@ const DEFAULTS = {
   positions: {}, sidebar: true, tab: 'playlist',
   img: { interval: 5, transition: 'fade', bg: 'theme', upscale: false, strip: true, info: false },
   mode: 'player',
-  feeds: { autoNext: false, askedAuto: false, last: null, quality: 'auto' },
+  feeds: { autoNext: false, askedAuto: false, last: null, quality: 'auto', custom: [], order: [], hidden: [] },
+  stremio: {
+    addons: [], defaultsInstalled: false, subLang: 'eng', server: 'http://127.0.0.1:11470', type: 'movie',
+    torrentEngine: 'auto', uploadKBs: 500, keepData: false, torrentNoticeSeen: false, syncAddons: true, syncLibrary: true,
+    autoNext: true, prefQuality: '1080p', showPrefs: {}, streamSort: 'best', streamGroup: false,
+  },
+  sleep: { last: 30 },
+  updates: { auto: true },
+  tvMode: false,
 };
 
 let S = structuredClone(DEFAULTS);
@@ -131,7 +139,7 @@ async function addFiles(paths, playFirst = true) {
   if (subs.length && current) loadSubtitle(subs[0]);
   let media = paths.filter((p) => !['srt', 'vtt'].includes(extOf(p)));
   if (!media.length) return;
-  if (FD.mode === 'feeds' && playFirst) setMode('player');
+  if (FD.mode !== 'player' && playFirst) setMode('player');
   let start = media[0];
   // opening a single photo brings in the rest of its folder, like a normal image viewer
   if (media.length === 1 && isImagePath(media[0])) {
@@ -167,10 +175,11 @@ function load(i, opts = {}) {
     ++loadToken;
     converting = false;
     hideBusy();
+    stopOtherStreams({});
     current = { item, image: true, converted: false, info: null };
     video.pause();
     if (video.getAttribute('src')) { video.removeAttribute('src'); video.load(); }
-    [...video.querySelectorAll('track')].forEach((t) => t.remove());
+    removeSubtitles();
     $('#empty').classList.add('hidden');
     stage.classList.remove('has-video');
     $('#audio-info').classList.add('hidden');
@@ -197,12 +206,30 @@ function load(i, opts = {}) {
   $('#empty').classList.add('hidden');
   stage.classList.remove('has-video');
   $('#audio-info').classList.add('hidden');
-  [...video.querySelectorAll('track')].forEach((t) => t.remove());
+  removeSubtitles();
+  SUBS.delay = 0; // a show's saved delay is put back when its subtitles load
+  SUBS.hidden = false;
   pendingStart = S.resume ? S.positions[item.path] || 0 : 0;
   shouldPlay = opts.autoplay ?? S.autoplay;
+  const remote = isRemotePath(item.path);
+  current.remote = remote;
+  stopOtherStreams(item);
+
+  if (remote) {
+    // streams from Discover: details come from the add-on, subtitles from subtitle add-ons
+    video.removeAttribute('src');
+    video.load();
+    if (item.resumeAt > 3) pendingStart = item.resumeAt;
+    setMeta({ title: item.title || item.name, artist: item.stremio ? 'Discover' : '' }, item.stremio?.poster || null);
+    if (item.stremio && typeof loadAddonSubs === 'function') loadAddonSubs(item, token);
+    renderPlaylist();
+    scrollCurrentIntoView();
+    save();
+    startStream(item, token);
+    return;
+  }
   video.src = api.mediaUrl(item.path);
   video.load();
-
   setMeta({ title: item.title || item.name, artist: item.artist || '' }, null);
   api.probe(item.path).then((info) => {
     if (token !== loadToken) return;
@@ -234,7 +261,7 @@ function setMeta(item, cover) {
   $('#now-title').textContent = (item.artist ? item.artist.split(' — ')[0] + ' — ' : '') + (item.title || item.name || '');
   api.windowCmd('title', `${item.title || item.name} — JS Player`);
   const img = $('#cover');
-  img.src = cover ? api.mediaUrl(cover) : placeholderCover();
+  img.src = !cover ? placeholderCover() : /^https?:\/\//.test(cover) ? cover : api.mediaUrl(cover);
   if ('mediaSession' in navigator) {
     navigator.mediaSession.metadata = new MediaMetadata({ title: item.title || item.name, artist: item.artist || '' });
   }
@@ -249,6 +276,10 @@ function placeholderCover() {
 
 function checkUndecodableVideo() {
   // audio plays but the video track can't be decoded (e.g. some HEVC/MPEG-2 files)
+  if (current?.remote) {
+    if (!current.live && current.plan?.video && video.readyState >= 1 && video.videoWidth === 0) fallbackToLive('video not decodable');
+    return;
+  }
   if (!current || current.converted || converting || !current.info) return;
   if (current.info.hasVideo && video.readyState >= 1 && video.videoWidth === 0 && S.autoconvert) {
     convert('This video codec needs converting');
@@ -259,7 +290,7 @@ async function convert(reason) {
   if (!current || converting) return;
   const token = loadToken;
   const item = current.item;
-  const resumeAt = video.currentTime > 1 ? video.currentTime : pendingStart;
+  const resumeAt = mediaTime() > 1 ? mediaTime() : pendingStart;
   converting = true;
   video.pause();
   video.removeAttribute('src');
@@ -282,18 +313,90 @@ async function convert(reason) {
   if (!r.cached) osd('Converted — saved to cache for next time', 2200);
 }
 
-function showBusy(text) {
+// bar: show the progress bar (file conversion); streams just show text and a spinner
+// cinematic: a Discover title that's starting shows its logo over its blurred backdrop;
+// 'light' (buffering) shows the logo over a dimmed view of the paused video instead
+function showBusy(text, { bar = true, cinematic = true } = {}) {
   $('#busy-text').textContent = text;
   $('#busy-fill').style.width = '0%';
-  $('#busy').classList.remove('hidden');
+  $('.busy-bar').hidden = !bar;
+  $('#busy-cancel').textContent = current?.remote ? 'Cancel (Esc)' : 'Cancel';
+  const sm = cinematic && current?.remote ? current.item.stremio : null;
+  const busy = $('#busy');
+  busy.classList.toggle('cinematic', !!sm);
+  busy.classList.toggle('light', !!sm && cinematic === 'light');
+  if (sm && busy.dataset.for !== current.item.path) {
+    busy.dataset.for = current.item.path;
+    const bg = sm.background || sm.poster;
+    $('#busy-backdrop').style.backgroundImage = bg ? `url(${JSON.stringify(bg)})` : '';
+    const logo = $('#busy-logo'), title = $('#busy-title');
+    title.textContent = sm.name || current.item.title || '';
+    title.hidden = !!sm.logo;
+    logo.hidden = !sm.logo;
+    if (sm.logo) {
+      logo.onerror = () => { logo.hidden = true; title.hidden = false; };
+      logo.src = sm.logo;
+    }
+    // the episode, if it's one ("Breaking Bad S01E01 · Pilot" -> "S01E01 · Pilot")
+    const ep = (current.item.title || '').startsWith(sm.name || '\u0000') ? current.item.title.slice((sm.name || '').length).trim() : '';
+    $('#busy-sub').textContent = ep;
+  }
+  busy.classList.remove('hidden');
 }
-function hideBusy() { $('#busy').classList.add('hidden'); }
+function hideBusy() { $('#busy').classList.add('hidden'); clearInterval(connectTimer); }
+const busyShown = () => !$('#busy').classList.contains('hidden');
+
+// Leave a stream that won't load (or that you cancel): stop the torrent and any conversion,
+// clear the player, and go back to Discover with the reason shown next to the streams.
+let connectTimer = null;
+let stallTimer = null;
+function leaveStream(message) {
+  const fromDiscover = !!current?.item?.stremio;
+  loadToken++; // anything still starting is abandoned
+  clearTimeout(stallTimer);
+  if (typeof hideUpNext === 'function') hideUpNext();
+  api.torrentStop();
+  releaseServerTorrent();
+  api.liveStop();
+  stopNetStatus();
+  hideBusy();
+  video.pause();
+  video.removeAttribute('src');
+  video.load();
+  removeSubtitles();
+  current = null;
+  S.index = -1;
+  renderPlaylist();
+  showEmptyIfNeeded();
+  syncPlayUI();
+  save();
+  if (fromDiscover) {
+    setMode('discover');
+    if (message && typeof showDiscoverNotice === 'function') showDiscoverNotice(message);
+  } else if (message) osd(message, 4000);
+}
 api.onTranscodeProgress((v) => {
   $('#busy-fill').style.width = (v * 100).toFixed(1) + '%';
   $('#busy-text').textContent = `Converting… ${Math.round(v * 100)}%`;
   api.windowCmd('progress', v);
 });
-$('#busy-cancel').onclick = () => { api.cancelTranscode(); };
+$('#busy-cancel').onclick = () => {
+  if (current?.remote) return leaveStream();
+  api.cancelTranscode();
+};
+
+// a stream that started but is waiting for data: say so, offer a way out, and notice if it stalls
+video.addEventListener('waiting', () => {
+  if (!current?.remote || busyShown()) return;
+  showBusy(current.item.torrent ? 'Buffering… waiting for more of the video to download' : 'Buffering…', { bar: false, cinematic: 'light' });
+  clearTimeout(stallTimer);
+  stallTimer = setTimeout(() => {
+    if (current?.remote && busyShown() && video.readyState < 3) {
+      $('#busy-text').textContent = 'This stream has stopped loading. Press Cancel to go back and pick another one, or keep waiting.';
+    }
+  }, 45000);
+});
+video.addEventListener('playing', () => { if (current?.remote) { clearTimeout(stallTimer); hideBusy(); } });
 
 function showError(msg) {
   osd('⚠ ' + msg, 5000);
@@ -312,13 +415,14 @@ function togglePlay() {
 }
 function stop() {
   if (current?.image) return toggleSlideshow(false, true);
+  if (current?.remote) return leaveStream(); // streams: stop downloading and go back
   video.pause();
-  video.currentTime = 0;
+  seekMedia(0);
 }
 function seekBy(d) {
-  if (!isFinite(video.duration)) return;
-  video.currentTime = Math.max(0, Math.min(video.duration - 0.1, video.currentTime + d));
-  osd(`${d > 0 ? '+' : '−'}${Math.abs(d)}s  ·  ${fmt(video.currentTime)}`);
+  if (!isFinite(mediaDuration())) return;
+  seekMedia(Math.max(0, Math.min(mediaDuration() - 0.1, mediaTime() + d)));
+  osd(`${d > 0 ? '+' : '−'}${Math.abs(d)}s  ·  ${fmt(mediaTime())}`);
 }
 function setVolume(v, show = true) {
   S.volume = Math.max(0, Math.min(2, Math.round(v * 100) / 100));
@@ -359,14 +463,14 @@ function nextIndex(dir) {
 }
 function next() { const i = nextIndex(1); if (i >= 0) load(i, { autoplay: true }); }
 function prev() {
-  if (video.currentTime > 4) { video.currentTime = 0; return; }
+  if (mediaTime() > 4) { seekMedia(0); return; }
   const i = nextIndex(-1);
   if (i >= 0) load(i, { autoplay: true });
 }
 
 function rememberPosition() {
   if (!current || !S.resume) return;
-  const p = current.item.path, t = video.currentTime, d = video.duration;
+  const p = current.item.path, t = mediaTime(), d = mediaDuration();
   if (isFinite(d) && d > 60 && t > 10 && t < d - 15) S.positions[p] = Math.floor(t);
   else delete S.positions[p];
   const keys = Object.keys(S.positions);
@@ -378,12 +482,12 @@ video.addEventListener('loadedmetadata', () => {
   const hasVideo = video.videoWidth > 0;
   stage.classList.toggle('has-video', hasVideo);
   $('#audio-info').classList.toggle('hidden', hasVideo);
-  if (pendingStart > 3 && isFinite(video.duration) && pendingStart < video.duration - 5) {
-    video.currentTime = pendingStart;
+  if (pendingStart > 3 && isFinite(mediaDuration()) && pendingStart < mediaDuration() - 5) {
+    seekMedia(pendingStart);
     osd(`Resumed at ${fmt(pendingStart)}`, 1800);
   }
   pendingStart = 0;
-  if (current && !current.item.duration && isFinite(video.duration)) { current.item.duration = video.duration; renderPlaylist(); }
+  if (current && !current.item.duration && isFinite(mediaDuration())) { current.item.duration = mediaDuration(); renderPlaylist(); }
   if (shouldPlay) video.play().catch(() => {});
   shouldPlay = false;
   checkUndecodableVideo();
@@ -391,20 +495,27 @@ video.addEventListener('loadedmetadata', () => {
 });
 video.addEventListener('error', () => {
   if (converting || !current || !video.getAttribute('src')) return;
+  if (current.remote) {
+    if (!current.live && current.plan && !current.plan.error && fallbackToLive('player error ' + (video.error && video.error.code))) return;
+    return leaveStream(`Couldn't play “${current.item.name}”. ${current.live ? "Converting it didn't work either." : "Its format isn't supported, or the link stopped working."} Try another stream.`);
+  }
   if (!current.converted && S.autoconvert) convert('Format not supported natively — converting');
   else showError(`Can't play “${current.item.name}”`);
 });
 video.addEventListener('play', syncPlayUI);
 video.addEventListener('pause', syncPlayUI);
 video.addEventListener('ended', () => {
-  if (S.repeat === 'one') { video.currentTime = 0; video.play(); return; }
+  if (typeof sleepOnEnded === 'function' && sleepOnEnded()) return; // the sleep timer was set to stop here
+  if (S.repeat === 'one') { seekMedia(0); video.play(); return; }
   if (current) delete S.positions[current.item.path];
+  if (typeof upNextOnEnded === 'function' && upNextOnEnded()) return; // the next episode takes over
   const i = nextIndex(1);
   if (i >= 0) load(i, { autoplay: true });
 });
 video.addEventListener('timeupdate', () => {
   updateTime();
-  if (ab.a != null && ab.b != null && video.currentTime >= ab.b) video.currentTime = ab.a;
+  if (typeof upNextTick === 'function') upNextTick();
+  if (ab.a != null && ab.b != null && mediaTime() >= ab.b) seekMedia(ab.a);
 });
 video.addEventListener('progress', updateBuffered);
 let posSaveTick = 0;
@@ -424,7 +535,7 @@ function syncPlayUI() {
 const seek = $('#seek');
 let dragging = false;
 function updateTime() {
-  const d = video.duration, t = video.currentTime;
+  const d = mediaDuration(), t = mediaTime();
   $('#t-cur').textContent = fmt(t);
   $('#t-dur').textContent = fmt(d);
   if (!dragging) {
@@ -434,13 +545,14 @@ function updateTime() {
   }
 }
 function updateBuffered() {
-  const d = video.duration;
+  const d = mediaDuration();
   if (!isFinite(d) || !video.buffered.length) return;
-  $('#seek-buf').style.width = (video.buffered.end(video.buffered.length - 1) / d) * 100 + '%';
+  const end = (current?.live ? current.live.offset : 0) + video.buffered.end(video.buffered.length - 1);
+  $('#seek-buf').style.width = Math.min(100, (end / d) * 100) + '%';
 }
 const fracAt = (x) => { const r = seek.getBoundingClientRect(); return Math.max(0, Math.min(1, (x - r.left) / r.width)); };
 seek.addEventListener('pointerdown', (e) => {
-  if (!isFinite(video.duration)) return;
+  if (!isFinite(mediaDuration())) return;
   dragging = true;
   seek.setPointerCapture(e.pointerId);
   const f = fracAt(e.clientX);
@@ -450,51 +562,381 @@ seek.addEventListener('pointermove', (e) => {
   const f = fracAt(e.clientX);
   const tip = $('#seek-tip');
   tip.style.left = f * 100 + '%';
-  tip.textContent = fmt(f * (video.duration || 0));
+  tip.textContent = fmt(f * (mediaDuration() || 0));
   if (dragging) $('#seek-fill').style.width = $('#seek-thumb').style.left = f * 100 + '%';
 });
 seek.addEventListener('pointerup', (e) => {
   if (!dragging) return;
   dragging = false;
-  video.currentTime = fracAt(e.clientX) * video.duration;
+  seekMedia(fracAt(e.clientX) * mediaDuration());
 });
 
 function toggleAB() {
   if (!current) return;
-  if (ab.a == null) { ab.a = video.currentTime; osd(`Loop start A = ${fmt(ab.a)}`); }
+  if (ab.a == null) { ab.a = mediaTime(); osd(`Loop start A = ${fmt(ab.a)}`); }
   else if (ab.b == null) {
-    if (video.currentTime <= ab.a) { ab.a = video.currentTime; osd('Loop start moved'); }
-    else { ab.b = video.currentTime; osd(`Looping ${fmt(ab.a)} → ${fmt(ab.b)}`); }
+    if (mediaTime() <= ab.a) { ab.a = mediaTime(); osd('Loop start moved'); }
+    else { ab.b = mediaTime(); osd(`Looping ${fmt(ab.a)} → ${fmt(ab.b)}`); }
   } else { ab = { a: null, b: null }; osd('Loop off'); }
   updateAB();
 }
 function updateAB() {
-  const el = $('#seek-ab'), d = video.duration;
+  const el = $('#seek-ab'), d = mediaDuration();
   $('#b-ab').classList.toggle('on', ab.a != null);
   if (ab.a == null || !isFinite(d)) { el.style.display = 'none'; return; }
   el.style.display = 'block';
   el.style.left = (ab.a / d) * 100 + '%';
-  el.style.width = (((ab.b ?? video.currentTime) - ab.a) / d) * 100 + '%';
+  el.style.width = (((ab.b ?? mediaTime()) - ab.a) / d) * 100 + '%';
 }
 
 // ---------------------------------------------------------------- subtitles
 async function loadSubtitle(p, quiet) {
   const text = await api.readText(p);
   if (text == null) return showError('Could not read subtitle file');
-  const vtt = /^WEBVTT/.test(text.trimStart())
-    ? text
-    : 'WEBVTT\n\n' + text.replace(/\r/g, '').replace(/^﻿/, '').replace(/(\d{1,2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2').replace(/<\/?font[^>]*>/g, '');
+  loadSubtitleText(text, baseName(p), quiet);
+}
+// SRT or WebVTT text -> a subtitle track on the video
+// ---------------------------------------------------------------- subtitle engine
+// Cues are kept in the video's own timing and placed on screen relative to the playback offset,
+// so they stay in sync when a stream is converted live (its clock restarts at each seek), and
+// cues can be added as they arrive (subtitles built into a torrent video come in bit by bit).
+const SUBS = { track: null, cues: [], label: null, extractId: null, buf: '', delay: 0, hidden: false };
+function subTime(s) {
+  const m = /(?:(\d+):)?(\d{1,2}):(\d{2})[.,](\d{1,3})/.exec(s);
+  return m ? (+(m[1] || 0)) * 3600 + (+m[2]) * 60 + (+m[3]) + (+m[4].padEnd(3, '0')) / 1000 : NaN;
+}
+// SRT or WebVTT text -> [{ start, end, text }]
+function parseSubtitleText(text) {
+  const out = [];
+  for (const block of String(text).replace(/\r/g, '').replace(/^﻿/, '').split(/\n{2,}/)) {
+    const lines = block.split('\n');
+    const i = lines.findIndex((l) => l.includes('-->'));
+    if (i < 0) continue;
+    const [a, b] = lines[i].split('-->');
+    const start = subTime(a), end = subTime(b);
+    if (!isFinite(start) || !isFinite(end) || end <= start) continue;
+    const body = lines.slice(i + 1).join('\n').replace(/<\/?font[^>]*>/gi, '').replace(/\{\\[^}]*\}/g, '').trim();
+    if (body) out.push({ start, end, text: body });
+  }
+  return out;
+}
+function subsTrack() {
+  if (!SUBS.track) SUBS.track = video.addTextTrack('subtitles', 'Subtitles');
+  SUBS.track.mode = SUBS.hidden ? 'hidden' : 'showing';
+  return SUBS.track;
+}
+function addCuesToTrack(list) {
+  const t = subsTrack();
+  // the playback clock's offset, minus your subtitle delay (positive delay = subtitles later)
+  const off = (current?.live ? current.live.offset : 0) - (SUBS.delay || 0);
+  for (const c of list) {
+    if (c.end - off <= 0) continue;
+    try { t.addCue(new VTTCue(Math.max(0, c.start - off), c.end - off, c.text)); } catch { /* bad cue */ }
+  }
+}
+// redraw all cues (after a live seek moved the offset)
+function renderSubCues() {
+  if (!SUBS.track || !SUBS.cues.length) return;
+  const t = SUBS.track;
+  [...(t.cues || [])].forEach((c) => t.removeCue(c));
+  addCuesToTrack(SUBS.cues);
+}
+function setSubCues(cues, label) {
+  removeSubtitles();
+  SUBS.cues = cues;
+  SUBS.label = label;
+  if (current) current.subLabel = label;
+  addCuesToTrack(cues);
+}
+function loadSubtitleText(text, label, quiet) {
+  const cues = parseSubtitleText(text);
+  if (!cues.length) return showError(`No subtitles found in ${label}`);
+  setSubCues(cues, label);
+  if (!quiet) osd(`Subtitles: ${label}`);
+  else osd(`Subtitles: ${label}`, 1800);
+}
+function removeSubtitles() {
   [...video.querySelectorAll('track')].forEach((t) => t.remove());
-  const track = document.createElement('track');
-  track.kind = 'subtitles';
-  track.label = baseName(p);
-  track.default = true;
-  track.src = URL.createObjectURL(new Blob([vtt], { type: 'text/vtt' }));
-  video.appendChild(track);
-  track.addEventListener('load', () => { track.track.mode = 'showing'; });
-  track.track.mode = 'showing';
-  if (!quiet) osd(`Subtitles: ${baseName(p)}`);
-  else osd('Subtitles loaded');
+  if (SUBS.track) {
+    [...(SUBS.track.cues || [])].forEach((c) => SUBS.track.removeCue(c));
+    SUBS.track.mode = 'disabled';
+    SUBS.track = null;
+  }
+  if (SUBS.extractId) { api.subsStop(); SUBS.extractId = null; }
+  SUBS.cues = [];
+  SUBS.label = null;
+  SUBS.buf = '';
+  if (current) current.subLabel = null;
+}
+// subtitles built into the video, read out by ffmpeg as the file arrives
+async function startEmbeddedSubs(entry, quiet) {
+  if (!current?.probeUrl) return;
+  setSubCues([], entry.label);
+  const r = await api.subsExtract({ url: current.probeUrl, headers: current.headers || null, index: entry.index });
+  if (r.error) return showError("Couldn't read the video's subtitles");
+  SUBS.extractId = r.id;
+  if (!quiet) osd(`Subtitles: ${entry.label}`);
+}
+api.onSubsChunk((m) => {
+  if (m.id !== SUBS.extractId) return;
+  if (m.text) {
+    SUBS.buf += m.text.replace(/\r/g, '');
+    const cut = SUBS.buf.lastIndexOf('\n\n');
+    if (cut < 0) return;
+    const ready = parseSubtitleText(SUBS.buf.slice(0, cut));
+    SUBS.buf = SUBS.buf.slice(cut + 2);
+    SUBS.cues.push(...ready);
+    addCuesToTrack(ready);
+  }
+  if (m.done) {
+    const rest = parseSubtitleText(SUBS.buf);
+    SUBS.buf = '';
+    SUBS.cues.push(...rest);
+    addCuesToTrack(rest);
+    SUBS.extractId = null;
+  }
+});
+// ---- quick controls: timing, on/off, cycling and size (hotkeys G/H, C, Shift+C, Alt+ +/-)
+const fmtDelay = (d) => (d > 0 ? '+' : '') + d.toFixed(1) + ' s';
+function setSubDelay(d) {
+  SUBS.delay = Math.round(Math.max(-60, Math.min(60, d)) * 10) / 10;
+  renderSubCues();
+  osd(`Subtitle delay ${fmtDelay(SUBS.delay)}${SUBS.delay ? (SUBS.delay > 0 ? ' (later)' : ' (earlier)') : ''}`, 1400);
+  if (typeof rememberShowSubs === 'function') rememberShowSubs();
+  const el = document.getElementById('sq-delay');
+  if (el) el.textContent = fmtDelay(SUBS.delay);
+}
+function toggleSubs() {
+  if (!current) return;
+  if (!SUBS.track && !SUBS.cues.length) {
+    if (current.subs?.length && typeof loadSubEntry === 'function') { current.subManual = true; SUBS.hidden = false; loadSubEntry(current.subs[0]); }
+    else osd('No subtitles loaded. Press the Subtitles button to add some');
+    return;
+  }
+  SUBS.hidden = !SUBS.hidden;
+  if (SUBS.track) SUBS.track.mode = SUBS.hidden ? 'hidden' : 'showing';
+  osd(SUBS.hidden ? 'Subtitles off' : `Subtitles: ${SUBS.label || 'on'}`, 1400);
+  current.subManual = true;
+  if (typeof rememberShowSubs === 'function') rememberShowSubs();
+}
+function cycleSubs() {
+  const list = current?.subs || [];
+  if (list.length < 2 || typeof loadSubEntry !== 'function') return osd(list.length ? 'No other subtitles for this' : 'No other subtitles. Press the Subtitles button to add some');
+  const i = list.findIndex((x) => subLabel(x) === SUBS.label);
+  current.subManual = true;
+  SUBS.hidden = false;
+  loadSubEntry(list[(i + 1) % list.length]);
+}
+function setSubSize(v) {
+  S.sub.size = Math.max(60, Math.min(220, v));
+  applySubStyle();
+  const r = document.getElementById('s-subsize');
+  if (r) { r.value = S.sub.size; updateRange(r); r.dispatchEvent(new Event('sync')); }
+  osd(`Subtitle size ${S.sub.size}%`, 1200);
+  save();
+}
+
+// web links and torrents (torrent items use a magnet: path as their key)
+const isRemotePath = (p) => /^(https?:\/\/|magnet:)/i.test(p || '');
+
+// ---------------------------------------------------------------- streams (Discover)
+// Playback time: live-converted streams restart at the seek point, so their clock starts at
+// current.live.offset instead of 0. Everything that reads or sets the time goes through these.
+function mediaTime() { return (current?.live ? current.live.offset : 0) + (video.currentTime || 0); }
+function mediaDuration() { return current?.live ? (current.live.duration || Infinity) : video.duration; }
+function seekMedia(t) {
+  if (current?.live) return liveSeek(t);
+  video.currentTime = t;
+}
+
+let netTimer = null;
+// a torrent opened on Stremio's server keeps downloading and sharing until it's removed there
+function releaseServerTorrent() {
+  const t = current?.serverTorrent;
+  if (!t) return;
+  current.serverTorrent = null;
+  api.stremioServerRemove(t.base, t.hash);
+}
+function stopOtherStreams(item) {
+  const keepTorrent = item.torrent && current?.item?.torrent?.infoHash === item.torrent.infoHash;
+  api.liveStop();
+  if (!keepTorrent) { api.torrentStop(); releaseServerTorrent(); }
+  stopNetStatus();
+}
+
+// public trackers handed to Stremio's server along with DHT (it finds peers through these)
+const STREMIO_TRACKERS = ['udp://tracker.opentrackr.org:1337/announce', 'udp://open.demonii.com:1337/announce', 'udp://tracker.torrent.eu.org:451/announce',
+  'udp://exodus.desync.com:6969/announce', 'udp://open.stealth.si:80/announce', 'udp://tracker.openbittorrent.com:6969/announce'];
+
+// Torrents through Stremio's own streaming server (faster). Returns { playerUrl, probeUrl },
+// or null to fall back to the built-in engine.
+async function openViaStremio(item, token) {
+  const srv = (S.stremio.server || 'http://127.0.0.1:11470').replace(/\/+$/, '');
+  const must = item.viaStremio.mustUse;
+  showBusy("Starting Stremio's streaming engine…", { bar: false });
+  const up = await api.stremioServerEnsure(srv);
+  if (token !== loadToken) return 'abandoned';
+  if (!up.ok) { if (must) { leaveStream(up.error); return 'abandoned'; } return null; }
+  const t = item.torrent;
+  const sources = [...new Set([`dht:${t.infoHash}`, ...(t.trackers || []), ...STREMIO_TRACKERS].map((x) => (x.startsWith('dht:') ? x : 'tracker:' + x)))];
+  $('#busy-text').textContent = 'Looking for people sharing this torrent…';
+  const statsUrl = `${srv}/${t.infoHash}/stats.json`;
+  current.stremioStats = statsUrl;
+  startNetStatus();
+  const c = await api.stremioServerCreate(srv, t.infoHash, sources);
+  if (token !== loadToken) return 'abandoned';
+  if (!c.ok) { leaveStream(c.error); return 'abandoned'; }
+  const idx = t.fileIdx >= 0 ? t.fileIdx : Number.isInteger(c.guessedFileIdx) ? c.guessedFileIdx : 0;
+  const url = `${srv}/${t.infoHash}/${idx}`;
+  $('#busy-text').textContent = 'Getting the start of the video…';
+  return { playerUrl: api.remoteUrl(url), probeUrl: url, files: c.files || [], fileBase: `${srv}/${t.infoHash}/` };
+}
+
+async function startStream(item, token) {
+  current.awaitStreamSubs = true; // add-on subtitles wait until we know what the torrent or video brings
+  const headers = item.remote?.headers || null;
+  let playerUrl, probeUrl;
+  if (item.torrent && item.viaStremio) {
+    const r = await openViaStremio(item, token);
+    if (r === 'abandoned') return;
+    if (r) {
+      playerUrl = r.playerUrl; probeUrl = r.probeUrl; current.torrentFiles = { files: r.files, base: r.fileBase };
+      current.serverTorrent = { base: (S.stremio.server || 'http://127.0.0.1:11470').replace(/\/+$/, ''), hash: item.torrent.infoHash };
+    }
+    else osd("Stremio isn't available here, so the built-in engine is used", 2600);
+  }
+  if (playerUrl) {
+    // opened through Stremio's server
+  } else if (item.torrent) {
+    showBusy('Connecting to people sharing this torrent…', { bar: false });
+    startNetStatus();
+    const t0 = Date.now();
+    clearInterval(connectTimer);
+    connectTimer = setInterval(async () => {
+      if (token !== loadToken) return clearInterval(connectTimer);
+      const s = await api.torrentStatus();
+      const secs = Math.round((Date.now() - t0) / 1000);
+      const peers = s ? s.peers : 0;
+      if (token === loadToken && busyShown()) {
+        $('#busy-text').textContent = peers
+          ? `Connected to ${peers} ${peers === 1 ? 'person' : 'people'}, getting the video's details… (${secs}s)`
+          : `Looking for people sharing this torrent… (${secs}s)${secs >= 20 ? ' Nobody found yet. It may not be shared right now.' : ''}`;
+      }
+    }, 1000);
+    const r = await api.torrentStart(item.torrent);
+    clearInterval(connectTimer);
+    if (token !== loadToken) return;
+    if (r.error) return leaveStream(r.error);
+    playerUrl = r.playerUrl;
+    probeUrl = r.localUrl;
+    current.torrentFile = r;
+    current.torrentFiles = { files: r.files, base: r.fileBase };
+    $('#busy-text').textContent = 'Getting the start of the video…';
+  } else {
+    showBusy('Opening the stream…', { bar: false });
+    playerUrl = api.remoteUrl(item.path, headers);
+    probeUrl = item.path;
+  }
+  const plan = await api.streamPlan(probeUrl, headers);
+  if (token !== loadToken) return;
+  hideBusy();
+  current.plan = plan;
+  current.probeUrl = probeUrl;
+  current.headers = headers;
+  current.playerUrl = playerUrl;
+  // subtitles that come with the torrent (files) or are built into the video take priority
+  if (typeof collectStreamSubs === 'function') collectStreamSubs(current.torrentFiles?.files || [], current.torrentFiles?.base || '', plan.error ? null : plan);
+  if (plan.error || plan.mode === 'direct') {
+    video.src = playerUrl;
+    video.load();
+  } else {
+    startLive(plan.v, plan.a);
+  }
+}
+
+// Convert while playing. v: 'copy' | 'h264' | 'none', a: 'aac' | 'none'
+async function startLive(v, a) {
+  if (!current) return;
+  const r = await api.liveCreate({ src: current.probeUrl, headers: current.headers, v, a });
+  if (r.error) return showError(r.error);
+  const wanted = pendingStart > 3 ? pendingStart : current.live ? current.live.offset : 0;
+  pendingStart = 0;
+  const item = current.item;
+  const start = await api.liveKeyframe(r.id, wanted); // copied video starts at a keyframe
+  if (current?.item !== item) return;
+  current.live = { id: r.id, url: r.url, offset: start, duration: current.plan?.duration || 0, v, a, seq: 0 };
+  renderSubCues();
+  shouldPlay = true;
+  osd(v === 'h264' ? 'Converting the video and sound while you watch' : 'Converting the sound while you watch', 2600);
+  video.src = `${r.url}&t=${start.toFixed(3)}`;
+  video.load();
+}
+async function liveSeek(t) {
+  const L = current.live;
+  const max = L.duration ? L.duration - 1 : Infinity;
+  const wanted = Math.max(0, Math.min(max, t));
+  const seq = ++L.seq; // only the latest of quick repeated seeks wins
+  L.offset = wanted; // show the new position right away
+  updateTime();
+  shouldPlay = !video.paused || shouldPlay;
+  const start = await api.liveKeyframe(L.id, wanted);
+  if (current?.live !== L || seq !== L.seq) return;
+  L.offset = start;
+  renderSubCues(); // subtitles follow the new start point
+  video.src = `${L.url}&t=${start.toFixed(3)}`;
+  video.load();
+  updateTime();
+}
+// direct playback didn't work (codec the player can't decode): convert instead
+function fallbackToLive(reason) {
+  if (!current?.remote || current.live || !current.probeUrl) return false;
+  const p = current.plan || {};
+  pendingStart = mediaTime() > 3 ? mediaTime() : pendingStart;
+  console.warn('switching to live conversion:', reason);
+  startLive(p.video ? 'h264' : 'none', p.audio ? 'aac' : 'none');
+  return true;
+}
+
+// peers / speed while a torrent plays
+function startNetStatus() {
+  stopNetStatus();
+  const el = $('#net-status');
+  const mb = (b) => (b / 1048576).toFixed(b >= 10485760 ? 0 : 1);
+  const tick = async () => {
+    if (!current?.item?.torrent) { el.classList.add('hidden'); return; }
+    if (current.stremioStats) { // Stremio's server
+      const r = await api.addonFetch(current.stremioStats);
+      if (!r.ok || !current?.stremioStats) return;
+      const s = r.data || {};
+      el.textContent = `Stremio engine · ${s.peers || 0} ${s.peers === 1 ? 'peer' : 'peers'} · ↓ ${mb(s.downloadSpeed || 0)} MB/s`;
+      el.classList.remove('hidden');
+      return;
+    }
+    const s = await api.torrentStatus();
+    if (!s) { el.classList.add('hidden'); return; }
+    el.textContent = `${s.peers} ${s.peers === 1 ? 'peer' : 'peers'} · ↓ ${mb(s.down)} MB/s · ${Math.round(s.progress * 100)}%`;
+    el.classList.remove('hidden');
+  };
+  tick();
+  netTimer = setInterval(tick, 1000);
+}
+function stopNetStatus() {
+  clearInterval(netTimer);
+  netTimer = null;
+  $('#net-status')?.classList.add('hidden');
+}
+
+// Play a stream link from Discover (or any web address) in the player.
+function playRemote(item) {
+  setMode('player');
+  let idx = S.playlist.findIndex((it) => it.path === item.path);
+  if (idx === -1) {
+    S.playlist.push({ kind: 'video', duration: 0, ...item });
+    idx = S.playlist.length - 1;
+  } else Object.assign(S.playlist[idx], item);
+  renderPlaylist();
+  load(idx, { autoplay: true });
+  save();
 }
 function applySubStyle() {
   const r = document.documentElement.style;
@@ -637,7 +1079,7 @@ async function queueProbe() {
   if (probing) return;
   probing = true;
   for (let guard = 0; guard < 2000; guard++) {
-    const it = S.playlist.find((x) => x.duration == null && !x._probed && !isImagePath(x.path));
+    const it = S.playlist.find((x) => x.duration == null && !x._probed && !isImagePath(x.path) && !isRemotePath(x.path));
     if (!it) break;
     it._probed = true;
     try {
@@ -656,6 +1098,7 @@ async function openFiles() { addFiles(await api.openFiles(), true); }
 async function openFolder() { addFiles(await api.openFolder(), true); }
 async function openSubs() {
   if (!current) return osd('Play something first');
+  if ((current.subs?.length || SUBS.cues.length) && typeof showSubsMenu === 'function') return showSubsMenu();
   const p = await api.openSubtitle();
   if (p) loadSubtitle(p);
 }
@@ -752,7 +1195,7 @@ async function screenshot() {
     g.fillRect(0, 0, c.width, c.height);
     g.drawImage(vizCanvas, 0, 0);
   }
-  const file = await api.saveScreenshot(c.toDataURL('image/png'), `${current.item.name}-${fmt(video.currentTime).replace(/:/g, '.')}`);
+  const file = await api.saveScreenshot(c.toDataURL('image/png'), `${current.item.name}-${fmt(mediaTime()).replace(/:/g, '.')}`);
   osd('Screenshot saved to Pictures\\JS Player', 2200);
   console.log('screenshot', file);
 }
@@ -762,7 +1205,7 @@ let fs = false;
 function toggleFullscreen(force) {
   fs = force ?? !fs;
   document.body.classList.toggle('fs', fs);
-  api.windowCmd('fullscreen', fs);
+  api.windowCmd('fullscreen', fs || (typeof TV !== 'undefined' && TV.on)); // TV mode stays full screen
   setIcon($('#b-full'), fs ? 'exitFull' : 'full');
   $('#controls').classList.toggle('autohide', fs && S.autohide);
   bumpIdle();
@@ -778,8 +1221,16 @@ document.addEventListener('mousemove', bumpIdle);
 function toggleSidebar(force) {
   S.sidebar = force ?? !S.sidebar;
   document.body.classList.toggle('sidebar-hidden', !S.sidebar);
+  const b = $('#sb-toggle');
+  if (b) {
+    setIcon(b, S.sidebar ? 'chevR' : 'chevL');
+    b.title = S.sidebar ? 'Hide the side panel (Tab)' : 'Show the side panel (Tab)';
+    b.setAttribute('aria-label', S.sidebar ? 'Hide the side panel' : 'Show the side panel');
+    b.setAttribute('aria-expanded', String(S.sidebar));
+  }
   save();
 }
+$('#sb-toggle').onclick = () => toggleSidebar();
 
 // tabs
 $$('.tab').forEach((t) => t.addEventListener('click', () => selectTab(t.dataset.tab)));
@@ -796,7 +1247,7 @@ const SHORTCUTS = [
   ['Space / K', 'Play / pause'], ['← / →', `Seek (Shift = 1s, Ctrl = 60s)`], ['↑ / ↓', 'Volume'], ['M', 'Mute'],
   ['F / dbl-click', 'Fullscreen'], ['Esc', 'Exit fullscreen'], ['N / P', 'Next / previous'], ['[ / ]', 'Slower / faster'],
   ['Backspace', 'Normal speed'], [', / .', 'Frame step (paused)'], ['L', 'A-B loop'], ['V', 'Next visualizer'],
-  ['S', 'Screenshot'], ['Tab', 'Toggle side panel'], ['Ctrl+O', 'Open files'], ['Ctrl+Shift+O', 'Open folder'], ['0–9', 'Jump to 0–90%'],
+  ['S', 'Screenshot'], ['Tab', 'Toggle side panel'], ['C / Shift+C', 'Subtitles on-off / next'], ['G / H', 'Subtitles earlier / later'], ['Alt + / −', 'Subtitle size'], ['Z', 'Sleep timer'], ['? / F1', 'All shortcuts'], ['Ctrl+O', 'Open files'], ['Ctrl+Shift+O', 'Open folder'], ['0–9', 'Jump to 0–90%'],
   ['Images:', ''], ['← / →', 'Previous / next image'], ['Wheel / + / −', 'Zoom (Shift+wheel: next image)'], ['Drag', 'Pan'],
   ['0 / 1 / dbl-click', 'Fit / 100% / toggle'], ['R / Shift+R', 'Rotate right / left'], ['H', 'Flip'],
   ['Space', 'Slideshow'], ['I', 'Image info'], ['T', 'Filmstrip'], ['Home / End', 'First / last image'],
@@ -810,7 +1261,12 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   const k = e.key;
-  if (FD.mode === 'feeds') return; // keys belong to the feed
+  if (typeof shortcutsShown === 'function') {
+    if (shortcutsShown()) { if (k === 'Escape' || k === '?' || k === 'F1') { e.preventDefault(); hideShortcuts(); } return; }
+    if (k === '?' || k === 'F1') { e.preventDefault(); showShortcuts(); return; }
+  }
+  if (FD.mode === 'discover' && e.key === 'Escape' && typeof discoverBack === 'function') { discoverBack(); return; }
+  if (FD.mode !== 'player') return; // keys belong to the feed or Discover
   if (current?.image && imageKey(e)) { e.preventDefault(); bumpIdle(); return; }
   const step = e.shiftKey ? 1 : e.ctrlKey ? 60 : S.seekStep;
   let handled = true;
@@ -822,19 +1278,30 @@ document.addEventListener('keydown', (e) => {
   else if (k === 'ArrowDown') setVolume(S.volume - 0.05);
   else if (k === 'm') toggleMute();
   else if (k === 'f' || k === 'Enter') toggleFullscreen();
-  else if (k === 'Escape') { if (fs) toggleFullscreen(false); }
+  else if (k === 'Escape') {
+    if (typeof upNextVisible === 'function' && upNextVisible()) cancelUpNext();
+    else if (current?.remote && busyShown()) leaveStream(); // cancel a stream that's loading
+    else if (fs) toggleFullscreen(false);
+  }
   else if (k === 'n') next();
   else if (k === 'p') prev();
   else if (k === ']') setSpeed(S.speed + 0.25);
   else if (k === '[') setSpeed(S.speed - 0.25);
   else if (k === 'Backspace') setSpeed(1);
-  else if (k === '.' && video.paused) video.currentTime += 1 / 30;
-  else if (k === ',' && video.paused) video.currentTime -= 1 / 30;
+  else if (k === '.' && video.paused) seekMedia(mediaTime() + 1 / 30);
+  else if (k === ',' && video.paused) seekMedia(mediaTime() - 1 / 30);
   else if (k === 'l') toggleAB();
   else if (k === 'v') cycleViz(e.shiftKey ? -1 : 1);
   else if (k === 's') screenshot();
   else if (k === 'Tab') toggleSidebar();
-  else if (/^[0-9]$/.test(k) && isFinite(video.duration)) video.currentTime = video.duration * (+k / 10);
+  else if (k === 'g' || k === 'G') setSubDelay(SUBS.delay - (e.shiftKey ? 1 : 0.1));
+  else if (k === 'h' || k === 'H') setSubDelay(SUBS.delay + (e.shiftKey ? 1 : 0.1));
+  else if (k === 'c') toggleSubs();
+  else if (k === 'z' && typeof showSleepMenu === 'function') showSleepMenu();
+  else if (k === 'C') cycleSubs();
+  else if (e.altKey && (k === '=' || k === '+')) setSubSize(S.sub.size + 10);
+  else if (e.altKey && (k === '-' || k === '_')) setSubSize(S.sub.size - 10);
+  else if (/^[0-9]$/.test(k) && isFinite(mediaDuration())) seekMedia(mediaDuration() * (+k / 10));
   else handled = false;
   if (handled) { e.preventDefault(); bumpIdle(); }
 });
@@ -1123,10 +1590,14 @@ function merge(def, val) {
   renderPlaylist();
   queueProbe();
   initFeeds();
+  initUpdates();
+  initDiscoverSettings();
+  if (typeof initTv === 'function') initTv();
 
   const launch = await api.getLaunchFiles();
   if (launch.length) addFiles(launch, true);
-  else if (S.index >= 0 && S.playlist[S.index]) load(S.index, { autoplay: false });
+  // reopen the last local file; never reconnect to a torrent or web stream by itself at startup
+  else if (S.index >= 0 && S.playlist[S.index] && !isRemotePath(S.playlist[S.index].path)) load(S.index, { autoplay: false });
   else showEmptyIfNeeded();
   api.onOpenFiles((files) => addFiles(files, true));
 })();
@@ -1134,6 +1605,7 @@ function merge(def, val) {
 // handy for scripting/tests
 window.__prism = {
   addFiles, load, setVizMode, useTheme, selectTab, toggleSidebar, get state() { return S; }, video,
+  updates: { check: () => checkForUpdatesNow(), get state() { return UPD.state; } },
   feeds: { setMode: (m) => setMode(m), open: (id, url) => openFeed(id, url), home: () => showFeedHome(), setAutoNext: (on) => setAutoNext(on), view: (id) => FD.views.get(id), get state() { return FD; } },
   img: { zoomTo: (...a) => zoomTo(...a), rotate: (d) => rotate(d), toggleSlideshow: (f) => toggleSlideshow(f), toggleInfo: () => toggleInfo(), get view() { return IV; } },
 };
