@@ -301,6 +301,7 @@ function updateFeedBar() {
   st.classList.toggle('on', on && !f.custom);
   $('#fb-sign').textContent = f.custom ? 'Clear sign-in' : on ? 'Sign out' : 'Sign in';
   $('#fb-sign').classList.toggle('primary', !on && !f.custom);
+  $('#fb-reset').classList.toggle('hidden', on || !!f.custom); // custom sites already have "Clear sign-in"
   let back = false, fwd = false;
   try { back = wv.canGoBack(); fwd = wv.canGoForward(); } catch { /* not ready */ }
   $('#fb-back').disabled = !back;
@@ -345,6 +346,17 @@ $('#fb-sign').onclick = () => {
   if (!f) return;
   if (f.custom || FD.status[f.id]) signOutFeed(f.id);
   else curView()?.loadURL(f.login);
+};
+
+// a site's sign-in keeps failing: clear what JS Player has saved for it and open its sign-in page fresh
+$('#fb-reset').onclick = async () => {
+  const f = feedById(FD.current);
+  if (!f || f.custom) return;
+  if (!confirm(`Clear everything JS Player has saved for ${f.name} (cookies and site data) and open its sign-in page fresh?\n\nThis often fixes "something went wrong" errors when signing in.`)) return;
+  await api.feedsSignOut(f.id);
+  await refreshFeedStatus();
+  curView()?.loadURL(f.login);
+  osd(`${f.name} reset. Try signing in again`, 2600);
 };
 
 async function signOutFeed(id) {

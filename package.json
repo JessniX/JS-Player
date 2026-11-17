@@ -28,6 +28,7 @@
       "torrent-main.js",
       "live-main.js",
       "preload.js",
+      "build/icon.ico",
       "src/**/*"
     ],
     "asarUnpack": [

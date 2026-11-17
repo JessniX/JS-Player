@@ -311,6 +311,7 @@ function createWindow() {
     minWidth: 640, minHeight: 400,
     backgroundColor: '#0d0f16',
     title: 'JS Player',
+    icon: path.join(__dirname, 'build', 'icon.ico'), // window and taskbar icon (the installed .exe gets it too)
     titleBarStyle: 'hidden',
     titleBarOverlay: process.platform === 'darwin' ? undefined : { color: '#00000000', symbolColor: '#e6e8f0', height: 38 },
     trafficLightPosition: { x: 12, y: 12 },

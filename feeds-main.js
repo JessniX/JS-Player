@@ -35,6 +35,30 @@ function browserUserAgent() {
 }
 const CH_BRANDS = `"Google Chrome";v="${CHROME_MAJOR}", "Chromium";v="${CHROME_MAJOR}", "Not_A Brand";v="24"`;
 const CH_FULL = `"Google Chrome";v="${process.versions.chrome}", "Chromium";v="${process.versions.chrome}", "Not_A Brand";v="24.0.0.0"`;
+// Sign-in data saved by older versions of JS Player can make X's sign-in fail. If you're not
+// signed in to X, clear X's saved data once (there's nothing to lose).
+async function resetStaleXOnce(ses) {
+  const flag = require('path').join(app.getPath('userData'), 'feeds-x-reset-1.flag');
+  const fs = require('fs');
+  if (fs.existsSync(flag)) return;
+  try {
+    const cookies = await ses.cookies.get({ domain: 'x.com' });
+    if (!cookies.some((c) => c.name === 'auth_token' && c.value)) await clearSiteData(ses, SIGN_OUT_DOMAINS.x);
+    fs.writeFileSync(flag, String(Date.now()));
+  } catch { /* try again next start */ }
+}
+async function clearSiteData(ses, domains) {
+  for (const domain of domains) {
+    const cookies = await ses.cookies.get({ domain }).catch(() => []);
+    for (const c of cookies) {
+      const host = c.domain.replace(/^\./, '');
+      await ses.cookies.remove(`https://${host}${c.path || '/'}`, c.name).catch(() => {});
+    }
+    for (const origin of [`https://${domain}`, `https://www.${domain}`]) {
+      await ses.clearStorageData({ origin, storages: ['localstorage', 'indexdb', 'serviceworkers', 'cachestorage'] }).catch(() => {});
+    }
+  }
+}
 
 function setupFeeds(getWin) {
   const ses = session.fromPartition(PARTITION);
@@ -52,6 +76,7 @@ function setupFeeds(getWin) {
     cb({ requestHeaders: h });
   });
   ses.setPermissionRequestHandler((_wc, permission, cb) => cb(['fullscreen', 'clipboard-sanitized-write'].includes(permission)));
+  resetStaleXOnce(ses);
 
   app.on('web-contents-created', (_e, wc) => {
     // the JS Player window may only attach locked-down https webviews in the feeds session
@@ -159,16 +184,7 @@ function setupFeeds(getWin) {
   ipcMain.handle('feeds-sign-out', async (_e, id) => {
     const domains = SIGN_OUT_DOMAINS[id];
     if (!domains) return false;
-    for (const domain of domains) {
-      const cookies = await ses.cookies.get({ domain }).catch(() => []);
-      for (const c of cookies) {
-        const host = c.domain.replace(/^\./, '');
-        await ses.cookies.remove(`https://${host}${c.path || '/'}`, c.name).catch(() => {});
-      }
-      for (const origin of [`https://${domain}`, `https://www.${domain}`]) {
-        await ses.clearStorageData({ origin, storages: ['localstorage', 'indexdb', 'serviceworkers', 'cachestorage'] }).catch(() => {});
-      }
-    }
+    await clearSiteData(ses, domains);
     return true;
   });
 }

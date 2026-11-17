@@ -64,10 +64,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 html[data-platform="darwin"] #titlebar { padding-left: 80px; padding-right: var(--spacing-3); }
 #titlebar button { -webkit-app-region: no-drag; }
 .brand { display: flex; align-items: center; gap: var(--spacing-2); font-weight: var(--font-weight-bold); }
-.logo, .empty-logo {
-  width: var(--spacing-4); height: var(--spacing-4); background: var(--accent);
-  clip-path: polygon(12% 0, 100% 50%, 12% 100%);
-}
+.logo, .empty-logo { width: 22px; height: 22px; background: url(logo.png) center / contain no-repeat; border-radius: 6px; flex-shrink: 0; }
 .menu { display: flex; gap: var(--spacing-0-5); }
 .menu button, .tb-right button {
   display: flex; align-items: center; gap: var(--spacing-1-5); background: none; border: 0; padding: var(--spacing-1) var(--spacing-2);
@@ -135,7 +132,7 @@ body.pulse-live #seek-fill { filter: brightness(calc(1 + var(--pulse, 0) * .6));
 .empty > #idle-wave { position: absolute; inset: 0; z-index: 0; width: 100%; height: 100%; pointer-events: none; }
 .empty h1 { margin: var(--spacing-4) 0 0; font-size: var(--font-size-2xl); font-weight: var(--font-weight-semibold); text-wrap: balance; }
 .empty p { color: var(--dim); max-width: 30em; margin: var(--spacing-1) 0 var(--spacing-4); line-height: 1.5; text-wrap: pretty; }
-.empty-logo { width: var(--spacing-11); height: var(--spacing-11); background: rgba(var(--text-rgb), .22); }
+.empty-logo { width: 88px; height: 88px; border-radius: 20px; opacity: .55; filter: drop-shadow(0 10px 30px rgba(147, 51, 234, .35)); }
 .empty-actions { display: flex; gap: var(--spacing-2); }
 
 .busy {
