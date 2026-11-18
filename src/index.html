@@ -226,7 +226,7 @@
           <label class="check"><input type="checkbox" id="s-ontop"> Always on top</label>
           <label class="check"><input type="checkbox" id="s-autohide"> Hide controls while watching</label>
           <h3>Subtitles</h3>
-          <div class="field"><label>Size <span id="sub-size-val" class="dim"></span></label><input type="range" id="s-subsize" min="60" max="220" step="5"></div>
+          <div class="field"><label>Size <span id="sub-size-val" class="dim"></span></label><input type="range" id="s-subsize" min="75" max="250" step="25"></div>
           <div class="row gap"><label class="color-field">Text <input type="color" id="s-subcolor"></label><label class="color-field">Background <input type="color" id="s-subbg"></label></div>
           <div class="field"><label>Background opacity <span id="sub-bga-val" class="dim"></span></label><input type="range" id="s-subbga" min="0" max="1" step="0.05"></div>
           <h3>Feeds</h3>
@@ -366,6 +366,11 @@
     </section>
 
     <!-- Controls -->
+    <!-- Watching a stream: Stremio-style bar over the video (see watch.js) -->
+    <div id="watch-top" class="watch-top">
+      <button class="icon-btn" id="w-back" title="Back to Discover (Esc)"><i data-icon="arrowL"></i></button>
+      <span id="w-title"></span>
+    </div>
     <footer id="controls">
       <div class="seek-row">
         <span id="t-cur" class="time">0:00</span>
@@ -384,6 +389,7 @@
           <button class="icon-btn" id="b-fwd" title="Forward"><i data-icon="fwd"></i></button>
           <button class="icon-btn" id="b-next" title="Next (N)"><i data-icon="next"></i></button>
           <button class="icon-btn" id="b-stop" title="Stop"><i data-icon="stop"></i></button>
+          <span id="w-time" class="time w-only"></span>
         </div>
         <div class="ctl-mid">
           <span id="img-counter"></span>
@@ -398,6 +404,8 @@
           <button class="icon-btn" id="b-mute" title="Mute (M)"><i data-icon="vol"></i></button>
           <input type="range" id="volume" min="0" max="2" step="0.01" title="Volume (up to 200%)">
           <span id="vol-val" class="time">100%</span>
+          <button class="icon-btn w-only" id="w-subs" data-cmd="subs" title="Subtitles"><i data-icon="cc"></i></button>
+          <button class="icon-btn w-only" id="w-more" title="More" aria-haspopup="menu"><i data-icon="more"></i></button>
           <button class="icon-btn" id="b-full" title="Fullscreen (F / double-click)"><i data-icon="full"></i></button>
         </div>
       </div>
@@ -447,6 +455,7 @@
   </dialog>
 
   <div id="subs-menu" class="pop hidden" role="menu"></div>
+  <div id="w-menu" class="pop hidden" role="menu"></div>
 
   <script src="feeds.js"></script>
   <script src="feeds-custom.js"></script>
@@ -455,7 +464,11 @@
   <script src="upnext.js"></script>
   <script src="sleep.js"></script>
   <script src="stremio-sync.js"></script>
+  <script src="continue.js"></script>
   <script src="tv.js"></script>
+  <script src="watch.js"></script>
+  <script src="subs-overlay.js"></script>
+  <script src="pip.js"></script>
   <script src="ambience.js"></script>
 </body>
 </html>

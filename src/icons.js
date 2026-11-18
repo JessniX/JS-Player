@@ -66,6 +66,8 @@ const ICONS = {
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><circle cx="12" cy="7.8" r=".9" class="f"/>',
   strip: '<rect x="3" y="14" width="5" height="6" rx="1"/><rect x="9.5" y="14" width="5" height="6" rx="1"/><rect x="16" y="14" width="5" height="6" rx="1"/><rect x="3" y="3" width="18" height="9" rx="1.5"/>',
   music: '<path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/>',
+  more: '<circle cx="12" cy="5" r="1.6" class="f"/><circle cx="12" cy="12" r="1.6" class="f"/><circle cx="12" cy="19" r="1.6" class="f"/>',
+  listAdd: '<path d="M4 6h11M4 12h11M4 18h7M18 14v7M14.5 17.5h7"/>',
   film: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/>',
 };
 

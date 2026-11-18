@@ -2,7 +2,8 @@
 // release group when the add-on says so, otherwise the same quality) and plays after a countdown.
 'use strict';
 
-const UPNEXT = { ctx: null, next: null, stream: null, fetching: false, shown: false, dismissed: false, timer: null, left: 0 };
+// retry: the episode Up Next started, with other streams to try if that one won't start
+const UPNEXT = { ctx: null, next: null, stream: null, alts: [], retry: null, fetching: false, shown: false, dismissed: false, timer: null, left: 0 };
 const UPNEXT_SECS = 10;
 
 // the episode after this one: specials (season 0) and episodes that aren't out yet are skipped
@@ -52,7 +53,19 @@ async function prefetchUpNext() {
     const pick = (binge && streams.find((s) => s.behaviorHints?.bingeGroup === binge))
       || streams.find((s) => streamKind(s).k === k && streamInfo(s).quality === q)
       || streams.slice().sort((a, b) => streamScore({ kind: streamKind(b), info: streamInfo(b) }) - streamScore({ kind: streamKind(a), info: streamInfo(a) }))[0];
-    if (pick) { UPNEXT.next = nv; UPNEXT.stream = pick; }
+    if (pick) {
+      UPNEXT.next = nv;
+      UPNEXT.stream = pick;
+      // backups in case it won't start: same kind first, best first
+      UPNEXT.alts = streams.filter((s) => s !== pick)
+        .sort((a, b) => (streamKind(b).k === k) - (streamKind(a).k === k) || streamScore({ kind: streamKind(b), info: streamInfo(b) }) - streamScore({ kind: streamKind(a), info: streamInfo(a) }))
+        .slice(0, 3);
+      // start finding people sharing it now, so the next episode starts quickly
+      if (streamKind(pick).k === 'torrent' && typeof warmTorrent === 'function') {
+        const trackers = (pick.sources || []).filter((x) => typeof x === 'string' && x.startsWith('tracker:')).map((x) => x.slice(8));
+        warmTorrent(String(pick.infoHash || '').toLowerCase(), trackers, 8 * 60 * 1000);
+      }
+    }
   } catch { /* no next episode lined up; the player just stops at the end */ }
 }
 
@@ -119,7 +132,20 @@ function playUpNext() {
   hideUpNext();
   if (!ctx || !next || !stream) return false;
   UPNEXT.ctx = null;
+  UPNEXT.retry = { meta: ctx.meta, video: next, addon: ctx.addon, alts: UPNEXT.alts.slice() };
   playStream({ s: stream, meta: ctx.meta, video: next, addonObj: ctx.addon });
+  return true;
+}
+
+// The next episode's stream wouldn't start (nobody sharing it, dead link…): try the next backup
+// without dropping you back on the Discover page. True if a backup is starting.
+function upNextRetry(failedId) {
+  const r = UPNEXT.retry;
+  if (!r || r.video.id !== failedId || !r.alts.length) { UPNEXT.retry = null; return false; }
+  const s = r.alts.shift();
+  osd("That stream didn't start, trying another one…", 2600);
+  playStream({ s, meta: r.meta, video: r.video, addonObj: r.addon });
+  UPNEXT.retry = r; // playStream re-arms Up Next; keep the backups for this episode
   return true;
 }
 

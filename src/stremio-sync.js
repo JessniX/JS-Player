@@ -53,7 +53,8 @@ function libraryRowsHtml(type) {
   if (!ACC.signedIn || !S.stremio.syncLibrary || !ACC.library.length) return '';
   const items = ACC.library.filter((x) => x.type === type);
   const progressOf = (x) => (x.state && x.state.duration ? x.state.timeOffset / x.state.duration : 0);
-  const cw = items.filter((x) => (!x.removed || x.temp) && x.state && x.state.timeOffset > 0)
+  const local = new Set((S.watchHistory || []).map((x) => x.id));
+  const cw = items.filter((x) => (!x.removed || x.temp) && x.state && x.state.timeOffset > 0 && !local.has(x._id))
     .sort((a, b) => when(b.state.lastWatched) - when(a.state.lastWatched)).slice(0, 30);
   const lib = items.filter((x) => !x.removed && !x.temp).sort((a, b) => when(b._mtime) - when(a._mtime)).slice(0, 60);
   const card = (x) => posterCard({

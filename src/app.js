@@ -30,8 +30,8 @@ const DEFAULTS = {
   eq: { on: false, preset: 'Flat', gains: [...EQ_PRESETS.Flat], preamp: 0, pan: 0, bass: 0 },
   playlist: [], index: -1, shuffle: false, repeat: 'off',
   resume: true, autoplay: true, autoconvert: true, autosubs: true, seekStep: 5, onTop: false, autohide: true,
-  sub: { size: 100, color: '#ffffff', bg: '#000000', bga: 0.55 },
-  positions: {}, sidebar: true, tab: 'playlist',
+  sub: { size: 100, color: '#ffffff', bg: '#000000', bga: 0 }, // like Stremio: no box behind subtitles
+  positions: {}, watchHistory: [], sidebar: true, tab: 'playlist',
   img: { interval: 5, transition: 'fade', bg: 'theme', upscale: false, strip: true, info: false },
   mode: 'player',
   feeds: { autoNext: false, askedAuto: false, last: null, quality: 'auto', custom: [], order: [], hidden: [] },
@@ -165,6 +165,7 @@ async function addFiles(paths, playFirst = true) {
 }
 
 function load(i, opts = {}) {
+  if (typeof recordWatch === 'function') recordWatch(); // save where the last title got to
   if (i < 0 || i >= S.playlist.length) return;
   rememberPosition();
   const item = S.playlist[i];
@@ -313,6 +314,31 @@ async function convert(reason) {
   if (!r.cached) osd('Converted — saved to cache for next time', 2200);
 }
 
+// Stream loading progress, shown by filling in the title logo (see --load in styles.css).
+// Each stage sets where the fill is now and how far it may creep while that stage waits,
+// so it keeps moving without ever claiming more than we know.
+const LOAD = { shown: 0, cap: 0, timer: null, for: null };
+function paintLoad() { $('#busy').style.setProperty('--load', LOAD.shown.toFixed(3)); }
+function setLoadProgress(at, cap = at) {
+  LOAD.shown = Math.max(LOAD.shown, at);
+  LOAD.cap = Math.max(LOAD.cap, cap, LOAD.shown);
+  paintLoad();
+  if (LOAD.timer) return;
+  LOAD.timer = setInterval(() => {
+    if (!busyShown()) { clearInterval(LOAD.timer); LOAD.timer = null; return; }
+    LOAD.shown += (LOAD.cap - LOAD.shown) * 0.035;
+    paintLoad();
+  }, 250);
+}
+function resetLoad() { LOAD.shown = 0; LOAD.cap = 0; paintLoad(); }
+// the video is about to show: fill to the end, then let the screen fade
+function finishLoad() {
+  if (!busyShown()) return;
+  LOAD.shown = LOAD.cap = 1;
+  paintLoad();
+  setTimeout(hideBusy, 450);
+}
+
 // bar: show the progress bar (file conversion); streams just show text and a spinner
 // cinematic: a Discover title that's starting shows its logo over its blurred backdrop;
 // 'light' (buffering) shows the logo over a dimmed view of the paused video instead
@@ -323,6 +349,8 @@ function showBusy(text, { bar = true, cinematic = true } = {}) {
   $('#busy-cancel').textContent = current?.remote ? 'Cancel (Esc)' : 'Cancel';
   const sm = cinematic && current?.remote ? current.item.stremio : null;
   const busy = $('#busy');
+  if (cinematic === 'light') { resetLoad(); setLoadProgress(0.06, 0.9); LOAD.for = null; }
+  else if (sm && LOAD.for !== current.item.path) { LOAD.for = current.item.path; resetLoad(); setLoadProgress(0.05, 0.25); }
   busy.classList.toggle('cinematic', !!sm);
   busy.classList.toggle('light', !!sm && cinematic === 'light');
   if (sm && busy.dataset.for !== current.item.path) {
@@ -343,7 +371,7 @@ function showBusy(text, { bar = true, cinematic = true } = {}) {
   }
   busy.classList.remove('hidden');
 }
-function hideBusy() { $('#busy').classList.add('hidden'); clearInterval(connectTimer); }
+function hideBusy() { $('#busy').classList.add('hidden'); clearInterval(connectTimer); LOAD.for = null; }
 const busyShown = () => !$('#busy').classList.contains('hidden');
 
 // Leave a stream that won't load (or that you cancel): stop the torrent and any conversion,
@@ -351,7 +379,9 @@ const busyShown = () => !$('#busy').classList.contains('hidden');
 let connectTimer = null;
 let stallTimer = null;
 function leaveStream(message) {
+  if (typeof recordWatch === 'function') recordWatch();
   const fromDiscover = !!current?.item?.stremio;
+  const failedId = message ? current?.item?.stremio?.id : null; // a stream that failed (not one you closed)
   loadToken++; // anything still starting is abandoned
   clearTimeout(stallTimer);
   if (typeof hideUpNext === 'function') hideUpNext();
@@ -370,6 +400,7 @@ function leaveStream(message) {
   showEmptyIfNeeded();
   syncPlayUI();
   save();
+  if (failedId && typeof upNextRetry === 'function' && upNextRetry(failedId)) return; // Up Next tries a backup stream
   if (fromDiscover) {
     setMode('discover');
     if (message && typeof showDiscoverNotice === 'function') showDiscoverNotice(message);
@@ -396,7 +427,9 @@ video.addEventListener('waiting', () => {
     }
   }, 45000);
 });
-video.addEventListener('playing', () => { if (current?.remote) { clearTimeout(stallTimer); hideBusy(); } });
+video.addEventListener('playing', () => { if (current?.remote) { clearTimeout(stallTimer); finishLoad(); } });
+// autoplay off: the first frame is ready, so the wait is over
+video.addEventListener('loadeddata', () => { if (current?.remote && video.paused && !shouldPlay) finishLoad(); });
 
 function showError(msg) {
   osd('⚠ ' + msg, 5000);
@@ -496,6 +529,7 @@ video.addEventListener('loadedmetadata', () => {
 video.addEventListener('error', () => {
   if (converting || !current || !video.getAttribute('src')) return;
   if (current.remote) {
+    if (current.planPending) return; // the format check is still running; it decides what to do
     if (!current.live && current.plan && !current.plan.error && fallbackToLive('player error ' + (video.error && video.error.code))) return;
     return leaveStream(`Couldn't play “${current.item.name}”. ${current.live ? "Converting it didn't work either." : "Its format isn't supported, or the link stopped working."} Try another stream.`);
   }
@@ -727,8 +761,15 @@ function cycleSubs() {
   SUBS.hidden = false;
   loadSubEntry(list[(i + 1) % list.length]);
 }
+// Stremio's subtitle sizes; A- / A+ step through them
+const SUB_SIZES = [75, 100, 125, 150, 175, 200, 250];
+const nearestSubSize = (v) => SUB_SIZES.reduce((a, b) => (Math.abs(b - v) < Math.abs(a - v) ? b : a));
+function stepSubSize(dir) {
+  const i = SUB_SIZES.indexOf(nearestSubSize(S.sub.size));
+  setSubSize(SUB_SIZES[Math.max(0, Math.min(SUB_SIZES.length - 1, i + dir))]);
+}
 function setSubSize(v) {
-  S.sub.size = Math.max(60, Math.min(220, v));
+  S.sub.size = nearestSubSize(v);
   applySubStyle();
   const r = document.getElementById('s-subsize');
   if (r) { r.value = S.sub.size; updateRange(r); r.dispatchEvent(new Event('sync')); }
@@ -768,6 +809,43 @@ function stopOtherStreams(item) {
 const STREMIO_TRACKERS = ['udp://tracker.opentrackr.org:1337/announce', 'udp://open.demonii.com:1337/announce', 'udp://tracker.torrent.eu.org:451/announce',
   'udp://exodus.desync.com:6969/announce', 'udp://open.stealth.si:80/announce', 'udp://tracker.openbittorrent.com:6969/announce'];
 
+const speedText = (bps) => `${(bps / 1048576).toFixed(1)} MB/s`;
+// Stremio's engine: while the start of the video downloads, show how much is here, the speed and
+// the people sharing it, and fill the logo to match (about 6 MB is enough to start playing).
+function followStremioStart(statsUrl, token) {
+  const START_BYTES = 6 * 1048576;
+  const t = setInterval(async () => {
+    if (token !== loadToken || !busyShown()) return clearInterval(t);
+    const r = await api.addonFetch(statsUrl);
+    if (!r.ok || token !== loadToken || !busyShown()) return;
+    const s = r.data || {};
+    const got = Math.min(1, (s.downloaded || 0) / START_BYTES);
+    setLoadProgress(0.6 + 0.3 * got, 0.9);
+    if (LOAD.shown < 0.85) $('#busy-text').textContent = `Getting the start of the video… ${Math.round(got * 100)}% · ${speedText(s.downloadSpeed || 0)} · ${s.peers || 0} ${s.peers === 1 ? 'person' : 'people'}`;
+  }, 700);
+}
+
+const stremioSources = (hash, trackers) => [...new Set([`dht:${hash}`, ...(trackers || []), ...STREMIO_TRACKERS].map((x) => (x.startsWith('dht:') ? x : 'tracker:' + x)))];
+
+// Warm-up (Stremio's engine): while the mouse rests on a torrent stream, start finding people sharing it
+// and fetching its details, so a click starts from there. Dropped after 2 minutes if not played.
+const WARM = { hash: null, timer: null };
+function warmTorrent(hash, trackers, keepMs = 120000) {
+  if (S.stremio.torrentEngine === 'builtin' || !/^[a-f0-9]{40}$/.test(hash || '') || WARM.hash === hash) return;
+  if (current?.serverTorrent?.hash === hash) return; // already playing
+  coolTorrent();
+  WARM.hash = hash;
+  WARM.timer = setTimeout(coolTorrent, keepMs);
+  const srv = (S.stremio.server || 'http://127.0.0.1:11470').replace(/\/+$/, '');
+  api.stremioServerEnsure(srv).then((up) => { if (up.ok && WARM.hash === hash) api.stremioServerCreate(srv, hash, stremioSources(hash, trackers)); });
+}
+function coolTorrent() {
+  clearTimeout(WARM.timer);
+  const h = WARM.hash;
+  WARM.hash = null;
+  if (h && current?.serverTorrent?.hash !== h) api.stremioServerRemove((S.stremio.server || 'http://127.0.0.1:11470').replace(/\/+$/, ''), h);
+}
+
 // Torrents through Stremio's own streaming server (faster). Returns { playerUrl, probeUrl },
 // or null to fall back to the built-in engine.
 async function openViaStremio(item, token) {
@@ -778,8 +856,10 @@ async function openViaStremio(item, token) {
   if (token !== loadToken) return 'abandoned';
   if (!up.ok) { if (must) { leaveStream(up.error); return 'abandoned'; } return null; }
   const t = item.torrent;
-  const sources = [...new Set([`dht:${t.infoHash}`, ...(t.trackers || []), ...STREMIO_TRACKERS].map((x) => (x.startsWith('dht:') ? x : 'tracker:' + x)))];
+  const sources = stremioSources(t.infoHash, t.trackers);
+  if (WARM.hash === t.infoHash) { clearTimeout(WARM.timer); WARM.hash = null; } // already warming: it's ours now
   $('#busy-text').textContent = 'Looking for people sharing this torrent…';
+  setLoadProgress(0.25, 0.45);
   const statsUrl = `${srv}/${t.infoHash}/stats.json`;
   current.stremioStats = statsUrl;
   startNetStatus();
@@ -789,6 +869,8 @@ async function openViaStremio(item, token) {
   const idx = t.fileIdx >= 0 ? t.fileIdx : Number.isInteger(c.guessedFileIdx) ? c.guessedFileIdx : 0;
   const url = `${srv}/${t.infoHash}/${idx}`;
   $('#busy-text').textContent = 'Getting the start of the video…';
+  setLoadProgress(0.6, 0.8);
+  followStremioStart(statsUrl, token);
   return { playerUrl: api.remoteUrl(url), probeUrl: url, files: c.files || [], fileBase: `${srv}/${t.infoHash}/` };
 }
 
@@ -809,6 +891,7 @@ async function startStream(item, token) {
     // opened through Stremio's server
   } else if (item.torrent) {
     showBusy('Connecting to people sharing this torrent…', { bar: false });
+    setLoadProgress(0.15, 0.45);
     startNetStatus();
     const t0 = Date.now();
     clearInterval(connectTimer);
@@ -817,8 +900,12 @@ async function startStream(item, token) {
       const s = await api.torrentStatus();
       const secs = Math.round((Date.now() - t0) / 1000);
       const peers = s ? s.peers : 0;
+      if (peers) setLoadProgress(0.55, 0.6);
+      if (s && s.stage === 'head') setLoadProgress(0.6 + 0.25 * s.head, 0.85);
       if (token === loadToken && busyShown()) {
-        $('#busy-text').textContent = peers
+        $('#busy-text').textContent = s && s.stage === 'head'
+          ? `Getting the start of the video… ${Math.round(s.head * 100)}% · ${speedText(s.down)} · ${peers} ${peers === 1 ? 'person' : 'people'}`
+          : peers
           ? `Connected to ${peers} ${peers === 1 ? 'person' : 'people'}, getting the video's details… (${secs}s)`
           : `Looking for people sharing this torrent… (${secs}s)${secs >= 20 ? ' Nobody found yet. It may not be shared right now.' : ''}`;
       }
@@ -832,14 +919,39 @@ async function startStream(item, token) {
     current.torrentFile = r;
     current.torrentFiles = { files: r.files, base: r.fileBase };
     $('#busy-text').textContent = 'Getting the start of the video…';
+    setLoadProgress(0.6, 0.8);
   } else {
     showBusy('Opening the stream…', { bar: false });
+    setLoadProgress(0.2, 0.6);
     playerUrl = api.remoteUrl(item.path, headers);
     probeUrl = item.path;
   }
+  current.probeUrl = probeUrl;
+  current.headers = headers;
+  current.playerUrl = playerUrl;
+  // Fast start: unless the stream's name says it needs converting (AC3, DTS, AVI…), hand the video to the
+  // player right away and check its formats with ffmpeg alongside, instead of first (saves 1-3 s).
+  if (!NEEDS_CONVERT.test(`${item.hint || ''} ${item.torrent?.name || ''} ${current.torrentFile?.name || ''}`)) {
+    if (busyShown()) { $('#busy-text').textContent = 'Starting the video…'; setLoadProgress(0.85, 0.97); }
+    video.src = playerUrl;
+    video.load();
+    current.planPending = api.streamPlan(probeUrl, headers).then((plan) => {
+      if (token !== loadToken) return;
+      current.planPending = null;
+      current.plan = plan;
+      if (typeof collectStreamSubs === 'function') collectStreamSubs(current.torrentFiles?.files || [], current.torrentFiles?.base || '', plan.error ? null : plan);
+      if (plan.error) { if (video.error) leaveStream(`Couldn't play “${item.name}”. Try another stream.`); return; }
+      // the check found a format the player can't handle: convert from where it got to
+      if (plan.mode !== 'direct') { pendingStart = mediaTime() > 1 ? mediaTime() : pendingStart; startLive(plan.v, plan.a); }
+      else if (video.error) fallbackToLive('player error ' + video.error.code);
+      else checkUndecodableVideo(); // e.g. HEVC this computer can't decode: picture stays black
+    });
+    return;
+  }
   const plan = await api.streamPlan(probeUrl, headers);
   if (token !== loadToken) return;
-  hideBusy();
+  // keep the loading screen until the first frames play (finishLoad on 'playing')
+  if (busyShown()) { $('#busy-text').textContent = 'Starting the video…'; setLoadProgress(0.85, 0.97); }
   current.plan = plan;
   current.probeUrl = probeUrl;
   current.headers = headers;
@@ -853,6 +965,9 @@ async function startStream(item, token) {
     startLive(plan.v, plan.a);
   }
 }
+
+// Stream names that mean the player can't play it as-is: surround audio formats it can't decode, or AVI/XviD
+const NEEDS_CONVERT = /(?<![a-z0-9])(e-?ac-?3|ac-?3|ddp|dd\+|dd[257]\.?[01]|dts(-?hd|-?x|-?ma)?|truehd|atmos|avi|xvid|divx)(?![a-z])/i;
 
 // Convert while playing. v: 'copy' | 'h264' | 'none', a: 'aac' | 'none'
 async function startLive(v, a) {
@@ -927,6 +1042,14 @@ function stopNetStatus() {
 }
 
 // Play a stream link from Discover (or any web address) in the player.
+// add a stream to the end of the playlist without playing it (it plays when its turn comes)
+function queueRemote(item) {
+  const it = S.playlist.find((x) => x.path === item.path);
+  if (it) { Object.assign(it, item); osd(`Already in the playlist: ${item.title || item.name}`, 2000); }
+  else { S.playlist.push({ kind: 'video', duration: 0, ...item }); osd(`Added to the playlist: ${item.title || item.name}`, 2000); }
+  renderPlaylist();
+  save();
+}
 function playRemote(item) {
   setMode('player');
   let idx = S.playlist.findIndex((it) => it.path === item.path);
@@ -1147,10 +1270,7 @@ $('#b-speed').oncontextmenu = () => setSpeed(1);
 $('#b-ab').onclick = toggleAB;
 $('#b-viz').onclick = () => cycleViz(1);
 $('#b-shot').onclick = screenshot;
-$('#b-pip').onclick = async () => {
-  if (!stage.classList.contains('has-video')) return osd('Picture-in-picture needs a video');
-  try { document.pictureInPictureElement ? await document.exitPictureInPicture() : await video.requestPictureInPicture(); } catch (e) { showError(e.message); }
-};
+$('#b-pip').onclick = () => toggleMiniPlayer(); // pip.js: the miniplayer with subtitles
 $('#b-full').onclick = () => toggleFullscreen();
 
 function syncVolumeUI() {
@@ -1214,9 +1334,17 @@ let idleTimer;
 function bumpIdle() {
   document.body.classList.remove('idle');
   clearTimeout(idleTimer);
-  idleTimer = setTimeout(() => { if ((!video.paused || current?.image) && fs) document.body.classList.add('idle'); }, 2500);
+  idleTimer = setTimeout(() => {
+    if (!((!video.paused || current?.image) && (fs || document.body.classList.contains('watch')))) return;
+    // the mouse is resting on the controls, or a menu is open: keep them up and check again later
+    if (document.querySelector('#controls:hover, .watch-top:hover, .pop:not(.hidden)')) return bumpIdle();
+    document.body.classList.add('idle');
+  }, 5000);
 }
 document.addEventListener('mousemove', bumpIdle);
+// pausing (Space, a remote, the media keys…) or pressing any key brings the controls back; paused, they stay up
+video.addEventListener('pause', bumpIdle);
+document.addEventListener('keydown', bumpIdle, true);
 
 function toggleSidebar(force) {
   S.sidebar = force ?? !S.sidebar;
@@ -1277,12 +1405,14 @@ document.addEventListener('keydown', (e) => {
   else if (k === 'ArrowUp') setVolume(S.volume + 0.05);
   else if (k === 'ArrowDown') setVolume(S.volume - 0.05);
   else if (k === 'm') toggleMute();
+  else if (k === 'Enter' && typeof upNextVisible === 'function' && upNextVisible()) playUpNext();
   else if (k === 'f' || k === 'Enter') toggleFullscreen();
   else if (k === 'Escape') {
     if (typeof upNextVisible === 'function' && upNextVisible()) cancelUpNext();
     else if (current?.remote && busyShown()) leaveStream(); // cancel a stream that's loading
     else if (fs) toggleFullscreen(false);
   }
+  else if (k === 'n' && current?.remote && typeof UPNEXT !== 'undefined' && UPNEXT.stream && UPNEXT.ctx) playUpNext(); // next episode
   else if (k === 'n') next();
   else if (k === 'p') prev();
   else if (k === ']') setSpeed(S.speed + 0.25);
@@ -1299,8 +1429,8 @@ document.addEventListener('keydown', (e) => {
   else if (k === 'c') toggleSubs();
   else if (k === 'z' && typeof showSleepMenu === 'function') showSleepMenu();
   else if (k === 'C') cycleSubs();
-  else if (e.altKey && (k === '=' || k === '+')) setSubSize(S.sub.size + 10);
-  else if (e.altKey && (k === '-' || k === '_')) setSubSize(S.sub.size - 10);
+  else if (e.altKey && (k === '=' || k === '+')) stepSubSize(1);
+  else if (e.altKey && (k === '-' || k === '_')) stepSubSize(-1);
   else if (/^[0-9]$/.test(k) && isFinite(mediaDuration())) seekMedia(mediaDuration() * (+k / 10));
   else handled = false;
   if (handled) { e.preventDefault(); bumpIdle(); }
