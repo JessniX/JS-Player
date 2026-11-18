@@ -1,7 +1,7 @@
 {
   "name": "js-player",
   "productName": "JS Player",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "A customizable media player with live audio visualizers, themes, an equalizer and ffmpeg fallback for any file type.",
   "main": "main.js",
   "scripts": {
